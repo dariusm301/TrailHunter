@@ -1,0 +1,41 @@
+$ServerUrl = "http://10.10.10.44:8000"
+$TimeRangeHours = 48
+$Hostname = $env:COMPUTERNAME
+$CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+$modules = @(
+    "modules/windows/Get-WinLogs.ps1"
+)
+
+foreach ($module in $modules) {
+    try{
+        $url = "$ServerUrl/$module"
+        Write-Host "[*] Loading: $url"
+        Invoke-Expression (New-Object Net.WebClient).DownloadString("$url")
+        Write-Host "[+] Loaded: $module" -ForegroundColor Green
+    }
+    catch{
+        Write-Host "[-] Failed to load $module : $($_.Exception.Message)" -Foreground Red
+    }
+}
+
+$result = @{
+    metadata = @{
+        hostname = $Hostname
+        collected_at = $CollectionTime
+        os_version =(Get-CimInstance Win32_OperatingSystem).Caption
+    }
+    event_logs = Get-WinLogs -TimeRangeHours $TimeRangeHours
+    processes = @{}
+    network = @{}
+    registry = @{}
+    scheduled_tasks = @{}
+    web_logs = @{}
+}
+
+$jsonPayload = $result | ConvertTo-Json -Depth 10
+
+Write-Host "[*] Total JSON size: $([math]::Round($jsonPayload.Length / 1MB, 2)) MB"
+
+Write-Host "[*] Collection complete." -ForegroundColor Green
+
+
