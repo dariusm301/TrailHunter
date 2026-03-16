@@ -13,12 +13,12 @@ function Get-WinLogs{
         system = @()
         powershell = @()
         warnings = @()
-    }
-
-    $winlogs_result.log_metadata = @{
-        oldest_security_event = $null
-        oldest_sysmon_event   = $null
-        audit_process_creation = (auditpol /get /subcategory:"Process Creation")
+        collection_time = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") 
+        log_metadata = @{
+            oldest_security_event = $null
+            oldest_sysmon_event   = $null
+            audit_process_creation = (auditpol /get /subcategory:"Process Creation")
+        }
     }    
 
     # Security events
@@ -39,7 +39,8 @@ function Get-WinLogs{
         }
         $winlogs_result.log_metadata.oldest_security_event = 
             $securityEvents | Select-Object -Last 1 | 
-            Select-Object -ExpandProperty TimeCreated
+            Select-Object -ExpandProperty TimeCreated | 
+            ForEach-Object { $_.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") }
         Write-Host "[+] Security: $($winlogs_result.security.Count) events found"
     }
     catch{
@@ -64,11 +65,11 @@ function Get-WinLogs{
         $winlogs_result.log_metadata.oldest_sysmon_event = 
             $sysmonEvents | Select-Object -Last 1 | 
             Select-Object -ExpandProperty TimeCreated
-        Write-Host "[+] Sysmon events found: $($winlogs_result.sysmon.Count)"
+        Write-Host "[+] Sysmon events: $($winlogs_result.sysmon.Count) found"
 
     }
     catch{
-        Write-Host "[-]Sysmon not available: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[-] Sysmon not available: $($_.Exception.Message)" -ForegroundColor Red
         $winlogs_result.warnings += "Sysmon is not available: $($_.Exception.Message)"
     }
 
@@ -90,7 +91,7 @@ function Get-WinLogs{
         Write-Host "[+] PowerShell: $($winlogs_result.powershell.Count) events"
     }
     catch {
-        Write-Host "[-] PowerShell log not available" -ForegroundColor Yellow
+        Write-Host "[-] PowerShell log not available: $($_.Exception.Message)" -ForegroundColor Yellow
         $winlogs_result.warnings += "PowerShell log not available"
     }
 

@@ -4,12 +4,13 @@ $Hostname = $env:COMPUTERNAME
 $CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
 $modules = @(
     "modules/windows/Get-WinLogs.ps1"
+    "modules/windows/Get-Processes.ps1"
+    "modules/windows/Get-NetworkInfo.ps1"
 )
 
 foreach ($module in $modules) {
     try{
         $url = "$ServerUrl/$module"
-        Write-Host "[*] Loading: $url"
         Invoke-Expression (New-Object Net.WebClient).DownloadString("$url")
         Write-Host "[+] Loaded: $module" -ForegroundColor Green
     }
@@ -25,8 +26,8 @@ $result = @{
         os_version =(Get-CimInstance Win32_OperatingSystem).Caption
     }
     event_logs = Get-WinLogs -TimeRangeHours $TimeRangeHours
-    processes = @{}
-    network = @{}
+    processes = Get-Processes
+    network = Get-NetworkInfo
     registry = @{}
     scheduled_tasks = @{}
     web_logs = @{}
