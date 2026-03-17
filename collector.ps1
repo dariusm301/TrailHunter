@@ -1,4 +1,4 @@
-$ServerUrl = "http://10.10.10.44:8000"
+$ServerUrl = "http://10.12.226.133:8000"
 $TimeRangeHours = 48
 $Hostname = $env:COMPUTERNAME
 $CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
@@ -6,6 +6,7 @@ $modules = @(
     "modules/windows/Get-WinLogs.ps1"
     "modules/windows/Get-Processes.ps1"
     "modules/windows/Get-NetworkInfo.ps1"
+    "modules/windows/Get-Registry.ps1"
 )
 
 foreach ($module in $modules) {
@@ -28,7 +29,7 @@ $result = @{
     event_logs = Get-WinLogs -TimeRangeHours $TimeRangeHours
     processes = Get-Processes
     network = Get-NetworkInfo
-    registry = @{}
+    registry = Get-Registry
     scheduled_tasks = @{}
     web_logs = @{}
 }
@@ -38,5 +39,4 @@ $jsonPayload = $result | ConvertTo-Json -Depth 10
 Write-Host "[*] Total JSON size: $([math]::Round($jsonPayload.Length / 1MB, 2)) MB"
 
 Write-Host "[*] Collection complete." -ForegroundColor Green
-
 
