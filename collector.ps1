@@ -1,4 +1,4 @@
-$ServerUrl = "http://10.12.226.133:8000"
+$ServerUrl = "http://192.168.0.140:8000"
 $TimeRangeHours = 48
 $Hostname = $env:COMPUTERNAME
 $CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
@@ -7,6 +7,8 @@ $modules = @(
     "modules/windows/Get-Processes.ps1"
     "modules/windows/Get-NetworkInfo.ps1"
     "modules/windows/Get-Registry.ps1"
+    "modules/windows/Get-ScheduledTasks.ps1"
+    "modules/windows/Get-WebServerLogs.ps1"
 )
 
 foreach ($module in $modules) {
@@ -30,8 +32,8 @@ $result = @{
     processes = Get-Processes
     network = Get-NetworkInfo
     registry = Get-Registry
-    scheduled_tasks = @{}
-    web_logs = @{}
+    scheduled_tasks = Get-ScheduledTasks
+    web_logs = Get-WebServerLogs
 }
 
 $jsonPayload = $result | ConvertTo-Json -Depth 10
