@@ -11,7 +11,7 @@ function Get-Processes{
         $processes = Get-CimInstance Win32_Process -ErrorAction Stop
 
         $processes_result.processes = $processes | ForEach-Object {
-            $hash = $null
+            $hash = "no_path"
             if ($_.ExecutablePath -and (Test-Path $_.ExecutablePath)){
                 try{
                     $hash = (Get-FileHash -Path $_.ExecutablePath -Algorithm SHA256).Hash
@@ -22,12 +22,23 @@ function Get-Processes{
             }
             $owner = $null
             try{
-                $ownerInfo = Invoke-CimMethod -InputObject $_ -MethodName GetOwner
-                $owner = "$($ownerInfo.Domain)\$($ownerInfo.User)"
+                $ownerInfo = Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction Stop
+               $owner = if ($ownerInfo.User) {
+                            "$($ownerInfo.Domain)\$($ownerInfo.User)"
+                        } else {
+                            "system"
+                        }
             }
             catch{
                 $owner = "unknown"
             }
+
+            $startTime = if ($_.CreationDate) {                                                 
+                $_.CreationDate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            }else {
+                "unknown"
+            }
+
 
             @{
                 name = $_.Name
@@ -37,10 +48,10 @@ function Get-Processes{
                 command_line = $_.CommandLine
                 owner = $owner
                 hash_sha256 = $hash
-                start_time = $_.CreationDate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+                start_time = $startTime
             }
         }
-        Write-Host "[*] Processes: $($processes_result.processes.Count) found"
+        Write-Host "[+] Processes: $($processes_result.processes.Count) found"
         
     }
     catch{

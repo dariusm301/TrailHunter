@@ -4,7 +4,10 @@ function Get-Registry{
     $paths = @(
         "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run",
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-        "HKCU:\Environment"
+        "HKCU:\Environment",
+        "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options",
+        "HKLM:\System\CurrentControlSet\Control\Session Manager\BootExecute",
+        "HKCU:\Software\Classes\ms-settings\shell\open\command"
     )
 
     $registry_result = @{
@@ -16,7 +19,13 @@ function Get-Registry{
     foreach($path in $paths){
         try{
             
-            $key = Get-Item -Path $path
+            $key = Get-Item -Path $path -ErrorAction SilentlyContinue
+            
+            if ($null -eq $key) {
+                Write-Host "[~] $path`: not found (skipped)" -ForegroundColor Yellow
+                $registry_result.warnings += "Registry path not found (may be normal): $path"
+                continue
+            }
             $registry_result.data[$path] =  $key.GetValueNames() | ForEach-Object {
                 @{
                     name = $_

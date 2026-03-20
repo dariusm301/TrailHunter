@@ -7,6 +7,7 @@ function Get-WinLogs{
     Write-Host "[*] Collecting event logs from last $TimeRangeHours hours..."
 
     $winlogs_result = @{
+        wmi = @()
         security = @()
         sysmon = @()
         application = @()
@@ -21,8 +22,30 @@ function Get-WinLogs{
         }
     }    
 
-    # Security events
-    $securityIds = @(4688, 4624, 4625, 4698, 4702)
+
+    # --- WMI ---
+    try {
+        $wmiEvents = Get-WinEvent -FilterHashtable @{
+            LogName   = 'Microsoft-Windows-WMI-Activity/Operational'
+            StartTime = $StartTime
+        } -ErrorAction Stop
+
+        $winlogs_result.wmi = $wmiEvents | ForEach-Object {
+            @{
+                time_created = $_.TimeCreated.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+                event_id     = $_.Id
+                message      = $_.Message
+            }
+        }
+        Write-Host "[+] WMI Activity: $($winlogs_result.wmi.Count) events"
+    }
+    catch {
+        Write-Host "[-] WMI Activity not available: $($_.Exception.Message)" -ForegroundColor Yellow
+        $winlogs_result.warnings += "WMI Activity not available: $($_.Exception.Message)"
+    }
+
+    # ---- Security events -----
+    $securityIds = @(4688, 4624, 4625, 4698, 4702, 4720, 4732)
     try{
         $securityEvents = Get-WinEvent -FilterHashtable @{
             LogName = 'Security'
@@ -64,7 +87,8 @@ function Get-WinLogs{
         }
         $winlogs_result.log_metadata.oldest_sysmon_event = 
             $sysmonEvents | Select-Object -Last 1 | 
-            Select-Object -ExpandProperty TimeCreated
+            Select-Object -ExpandProperty TimeCreated | 
+            ForEach-Object { $_.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") }
         Write-Host "[+] Sysmon events: $($winlogs_result.sysmon.Count) found"
 
     }
@@ -102,6 +126,7 @@ function Get-WinLogs{
         try {
             $events = Get-WinEvent -FilterHashtable @{
                 LogName   = $logName
+                Level = @(2,3)
                 StartTime = $StartTime
             } -ErrorAction Stop
 
