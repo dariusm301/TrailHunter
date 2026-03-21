@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv*/
+
+# Date colectate
+probe/data/
+analysis-server/data/
+
+# Environment files
+.env
+
+# IDE
+.vscode/
+.idea/

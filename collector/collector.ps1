@@ -1,16 +1,16 @@
 param(
-    $ServerUrl = "http://10.12.226.133:8000",
-    $TimeRangeHours = 48
+    $ServerUrl = "http://10.10.10.44:8000",
+    $TimeRangeHours = 2
 )
 $Hostname = $env:COMPUTERNAME
 $CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
 $modules = @(
-    "modules/windows/Get-WinLogs.ps1"
-    "modules/windows/Get-Processes.ps1"
-    "modules/windows/Get-NetworkInfo.ps1"
-    "modules/windows/Get-Registry.ps1"
-    "modules/windows/Get-ScheduledTasks.ps1"
-    "modules/windows/Get-WebServerLogs.ps1"
+    "windows/Get-WinLogs.ps1"
+    "windows/Get-Processes.ps1"
+    "windows/Get-NetworkInfo.ps1"
+    "windows/Get-Registry.ps1"
+    "windows/Get-ScheduledTasks.ps1"
+    "windows/Get-WebServerLogs.ps1"
 )
 
 function Get-JsonHash{
@@ -72,9 +72,32 @@ $result = @{
 $jsonPayload = $result | ConvertTo-Json -Depth 10
 
 Write-Host "[*] Total JSON size: $([math]::Round($jsonPayload.Length / 1MB, 2)) MB"
+$jsonBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonPayload) 
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$hashString = [System.BitConverter]::ToString($sha.ComputeHash($jsonBytes)) -replace '-', ''
 
+Write-Host "[*] SHA256: $hashString"
+Write-Host "[*] Bytes length: $($jsonBytes.Length)"
 $hashString = Get-JsonHash $jsonPayload
 Write-Host "[*] SHA256: $hashString"
+Write-Host "[*] Bytes length: $($jsonBytes.Length)"
+
+Write-Host "[*] Sending data to the probe..."
+
+try{
+    $client = New-Object System.Net.WebClient
+    $client.Headers.Add("Content-Type", "application/json")
+    $client.Headers.Add("X-Collection-Hash", $hashString)
+    
+    $responseBytes = $client.UploadData("$ServerUrl/collect", "POST", $jsonBytes)
+    $response = [System.Text.Encoding]::UTF8.GetString($responseBytes) | ConvertFrom-Json
+    
+    Write-Host "[+] Data sent succesfully" -ForegroundColor Green
+    Write-Host "[+] Server response: $($response.status)" -ForegroundColor Green
+}catch{
+    Write-Host "[-] Failed to send data: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[-] Server detail: $($_.ErrorDetails.Message)" -ForegroundColor Red
+}
 
 Write-Host "[*] Collection complete." -ForegroundColor Green
 
