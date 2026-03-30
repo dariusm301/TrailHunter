@@ -17,3 +17,9 @@ analysis-server/data/
 # IDE
 .vscode/
 .idea/
+
+teste
+*.json
+get*
+test*
+*.xml

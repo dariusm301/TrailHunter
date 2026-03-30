@@ -1,3 +1,22 @@
+function Convert-EventToDict {
+    param($event)
+    $xml = [xml]$event.ToXml()
+    $eventData = @{}
+    $xml.Event.EventData.Data | ForEach-Object {
+        if ($_.Name) {
+            $eventData[$_.Name] = $_.'#text'
+        }
+    }
+    return @{
+        time_created = $event.TimeCreated.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        event_id     = $event.Id
+        message      = $event.Message
+        event_data   = $eventData
+    }
+}
+
+
+
 function Get-WinLogs{
     param(
         [int]$TimeRangeHours = 48
@@ -36,8 +55,8 @@ function Get-WinLogs{
                 event_id     = $_.Id
                 message      = $_.Message
             }
-        }
-        Write-Host "[+] WMI Activity: $($winlogs_result.wmi.Count) events"
+        }       
+         Write-Host "[+] WMI Activity: $($winlogs_result.wmi.Count) events"
     }
     catch {
         Write-Host "[-] WMI Activity not available: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -45,7 +64,7 @@ function Get-WinLogs{
     }
 
     # ---- Security events -----
-    $securityIds = @(4688, 4624, 4625, 4698, 4702, 4720, 4732)
+    $securityIds = @(4624, 4625, 4688, 4698, 4702, 4720, 4732)
     try{
         $securityEvents = Get-WinEvent -FilterHashtable @{
             LogName = 'Security'
@@ -53,13 +72,8 @@ function Get-WinLogs{
             StartTime = $StartTime
         } -ErrorAction Stop
 
-        $winlogs_result.security = $securityEvents | ForEach-Object {
-            @{
-                time_created = $_.TimeCreated.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-                event_id = $_.Id
-                message = $_.Message
-            }
-        }
+        $winlogs_result.security = $securityEvents | ForEach-Object {Convert-EventToDict $_}
+        
         $winlogs_result.log_metadata.oldest_security_event = 
             $securityEvents | Select-Object -Last 1 | 
             Select-Object -ExpandProperty TimeCreated | 
@@ -78,13 +92,8 @@ function Get-WinLogs{
             StartTime = $StartTime
         } -ErrorAction Stop
 
-        $winlogs_result.sysmon = $sysmonEvents | ForEach-Object {
-            @{
-                time_created = $_.TimeCreated.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-                event_id = $_.Id
-                message = $_.Message
-            }
-        }
+        $winlogs_result.sysmon = $sysmonEvents | ForEach-Object {Convert-EventToDict $_}
+        
         $winlogs_result.log_metadata.oldest_sysmon_event = 
             $sysmonEvents | Select-Object -Last 1 | 
             Select-Object -ExpandProperty TimeCreated | 
@@ -105,13 +114,8 @@ function Get-WinLogs{
             StartTime = $StartTime
         } -ErrorAction Stop
 
-        $winlogs_result.powershell = $psEvents | ForEach-Object {
-            @{
-                time_created = $_.TimeCreated.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-                event_id     = $_.Id
-                message      = $_.Message
-            }
-        }
+        $winlogs_result.powershell = $psEvents | ForEach-Object {Convert-EventToDict $_}
+        
         Write-Host "[+] PowerShell: $($winlogs_result.powershell.Count) events"
     }
     catch {
@@ -130,14 +134,8 @@ function Get-WinLogs{
                 StartTime = $StartTime
             } -ErrorAction Stop
 
-            $winlogs_result[$logName.ToLower()] = $events | ForEach-Object {
-                @{
-                    time_created = $_.TimeCreated.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-                    event_id     = $_.Id
-                    level        = $_.LevelDisplayName
-                    message      = $_.Message
-                }
-            }
+            $winlogs_result[$logName.ToLower()] = $events | ForEach-Object {Convert-EventToDict $_}
+            
             Write-Host "[+] $logName`: $($winlogs_result[$logName.ToLower()].Count) events"
         }
         catch {
@@ -147,3 +145,4 @@ function Get-WinLogs{
     }
     return $winlogs_result
 }
+
