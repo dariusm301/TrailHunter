@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from models.events import NormalizedEvent
 from datetime import datetime
+import re
 
 class BaseNormalizer(ABC):
 
     @staticmethod
-    def parse_time(ts : str | None) -> datetime:
+    def _parse_time(ts : str | None) -> datetime:
         if not ts:
             return datetime.now()
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
@@ -21,7 +22,7 @@ class BaseNormalizer(ABC):
         return fields
     
     @staticmethod
-    def parse_user(raw: str) -> tuple[str | None, str | None]:
+    def _parse_user(raw: str) -> tuple[str | None, str | None]:
         """"DOMAIN\\user -> (domain, username)"""
         if not raw:
             return None, None
@@ -37,12 +38,22 @@ class BaseNormalizer(ABC):
         return value.strip()
     
     @staticmethod
-    def _hex_to_int(self, value: str) -> int | None:
+    def _hex_to_int(value: str) -> int | None:
         try:
             return int(value, 16) if value else None
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _parse_ms_date(value: str) -> datetime | None:
+        if not value or not isinstance(value, str):
+            return None
+        match = re.search(r'd(\d+)', value)
+        if match:
+            timestamp = int(match.group(1)) / 1000
+            return self._parse_time(timestamp)
+        return None
+    
     @abstractmethod
     def normalize(self, data: dict) -> NormalizedEvent | None:
         raise NotImplementedError("Subclasses must implement this method")

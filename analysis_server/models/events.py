@@ -27,6 +27,7 @@ class HostFields(BaseModel):
     ip : str | None = None
     name : str | None = None
     os: OSFields | None = None
+    mac : str | None = None
 
 class UserFields(BaseModel):
     name : str | None = None
@@ -54,6 +55,10 @@ class NetworkFields(BaseModel):
     protocol: str | None = None
     transport: str | None = None
     direction: str | None = None
+    # Custom fields
+    name: str | None = None
+    gateway : str | None = None
+    dns_servers : str | None = None
 
 class SourceFields(BaseModel):
     address: str | None = None
