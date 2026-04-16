@@ -51,7 +51,7 @@ class BaseNormalizer(ABC):
         match = re.search(r'd(\d+)', value)
         if match:
             timestamp = int(match.group(1)) / 1000
-            return self._parse_time(timestamp)
+            return BaseNormalizer._parse_time(timestamp)
         return None
     
     @abstractmethod

@@ -15,6 +15,8 @@ class EventFields(BaseModel):
     provider : str | None = None
     risk_score : float | None = None
     severity : int | None = None
+    severity_label : str | None = None
+    reason : str | None = None
 
 class OSFields(BaseModel):
     family: str | None = None
@@ -84,6 +86,7 @@ class WinLogsFields (BaseModel):
 class HTTPFields(BaseModel):
     request_method: str | None = None
     response_status_code: int | None = None
+    agent : str | None = None
 
 class UrlFields(BaseModel):
     original: str | None = None

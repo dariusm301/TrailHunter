@@ -13,6 +13,39 @@ function Get-WebServerLogs{
         warnings = @()
     }
 
+     function Parse-AccessLine {
+        param([string]$Line)
+        $pattern = '^(\S+) \S+ \S+ \[([^\]]+)\] "(\S+) (\S+) \S+" (\d{3}) (\S+) "([^"]*)" "([^"]*)"$'
+        if ($Line -match $pattern) {
+            return [ordered]@{
+                client_ip   = $Matches[1]
+                timestamp   = $Matches[2] 
+                method      = $Matches[3]
+                path        = $Matches[4]
+                status_code = [int]$Matches[5]
+                bytes       = if ($Matches[6] -eq '-') { $null } else { [int]$Matches[6] }
+                referer     = $Matches[7]
+                user_agent  = $Matches[8]
+            }
+        }
+        return $null
+    }
+
+    function Parse-ErrorLine {
+        param([string]$Line)
+        $pattern = '^\[(\w{3} \w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d+ \d{4})\] \[([^\]]+)\] \[([^\]]+)\] (?:\[client ([^\]]+)\] )?(.+)$'
+        if ($Line -match $pattern) {
+            return [ordered]@{
+                timestamp  = $Matches[1]
+                level      = $Matches[2]   
+                module     = $Matches[3]
+                client     = if ($Matches[4]) { $Matches[4] } else { $null }
+                message    = $Matches[5]
+            }
+        }
+        return $null
+    }
+
 
     function Get-LineDateApache{
         param(
@@ -61,16 +94,29 @@ function Get-WebServerLogs{
 
         foreach ($LogFile in $LogFiles){
             $fullPath = Join-Path $Path $LogFile
-            $lines = Get-Content $fullPath -ErrorAction Stop
+            $logType = if ($LogFile -Like "*access*") {"access"} else {"error"}
+            $parser = if ($logType -eq "access") { "Parse-AccessLine" } else { "Parse-ErrorLine" }
+            $lines = Get-Content $fullPath -Encoding UTF8 -ErrorAction Stop
 
             if ($filterActive){
-                $logType = if ($logFile -Like "*access*") {"access"} else {"error"}
                 $lines = $lines | Where-Object {
                     $lineDate = Get-LineDateApache -Line $_ -LogType $logType
                     $null -ne $lineDate -and $lineDate -ge $FromDate
                 }
             }
-            $weblog_result.data[$LogFile] = $lines -join "`n"
+            $parsed = foreach($line in $lines){
+                $obj = & $parser -Line $line
+                if ($null -ne $obj){
+                    $obj
+                }
+            }
+
+            $weblog_result.data[$LogFile] = @{
+                log_type = $logType
+                count = @($parsed).Count
+                entries = @($parsed)
+            }
+
             Write-Host "[+] $LogFile`: $($lines.Count) lines"
         }
     }catch{
@@ -79,3 +125,4 @@ function Get-WebServerLogs{
     }
     return $weblog_result
 }
+
