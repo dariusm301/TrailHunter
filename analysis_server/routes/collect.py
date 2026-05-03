@@ -4,7 +4,7 @@ from services import validator, ingestor
 
 router = APIRouter()
 
-@router.post("/collect")
+@router.post("/api/ingest")
 async def collect_data(
     request : Request,
     x_collection_hash: Optional[str] = Header(None)
