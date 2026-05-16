@@ -5,7 +5,8 @@ from .services.convert_sid import convert_raw_sid_to_string
 
 
 
-class WMIChannel(BaseNormalizer):
+class WMINormalizer(BaseNormalizer):
+    
     def normalize(self, raw: dict) -> NormalizedEvent | None:
         event_id = raw.get('event_id')
         parser = getattr(self, f"_parse_{event_id}", None)
@@ -24,7 +25,7 @@ class WMIChannel(BaseNormalizer):
             }   
         """
         kv = self.parse_kv(raw.get('message', ''))
-        domain, user = self.parse_user(kv.get("User", ""))
+        domain, user = self._parse_user(kv.get("User", ""))
         pid_raw = kv.get("ClientProcessId", "0")
         pid = int(pid_raw) if pid_raw.isdigit() else None
 
@@ -33,7 +34,7 @@ class WMIChannel(BaseNormalizer):
                 action="wmi_query_error",
                 category="configuration",
                 code=str(raw.get("event_id")),
-                created=self.parse_time(raw.get("time_created")),
+                created=self._parse_time(raw.get("time_created")),
                 dataset="windows.wmi",
                 original=raw.get("message", "").encode("utf-8"),
                 provider="Microsoft-Windows-WMI-Activity",
@@ -68,7 +69,7 @@ class WMIChannel(BaseNormalizer):
         }
         """
         id = str(raw.get('event_id'))
-        time_created = self.parse_time(raw.get('time_created'))
+        time_created = self._parse_time(raw.get('time_created'))
 
         message = raw.get('message', '')
         sentence, _, kv_part = message.partition(".")
@@ -113,7 +114,7 @@ class WMIChannel(BaseNormalizer):
             }
         """
         id = str(raw.get('event_id'))
-        time_created = self.parse_time(raw.get('time_created'))
+        time_created = self._parse_time(raw.get('time_created'))
         kv = self.parse_kv(raw.get('message', ''))
         provider_raw = kv.get("Provider", "")
         provider_name = provider_raw.split(",")[0].strip() if provider_raw else None
@@ -156,7 +157,7 @@ class WMIChannel(BaseNormalizer):
         }
         """
         id = str(raw.get('event_id'))
-        time_created = self.parse_time(raw.get('time_created'))
+        time_created = self._parse_time(raw.get('time_created'))
         kv = self.parse_kv(raw.get('message', ''))
         provider_name = "WMI Subscription"
 
@@ -165,7 +166,7 @@ class WMIChannel(BaseNormalizer):
         host_match = re.search(r'ClientMachine\s*=\s*([^;]+)', raw.get('message', ''))
         hostname = host_match.group(1).strip() if host_match else None
 
-        domain, user = self.parse_user(kv.get("UserName", ""))
+        domain, user = self._parse_user(kv.get("UserName", ""))
 
         return NormalizedEvent(
             event=EventFields(
@@ -207,7 +208,7 @@ class WMIChannel(BaseNormalizer):
         }
         """
         id = str(raw.get('event_id'))
-        time_created = self.parse_time(raw.get('time_created'))
+        time_created = self._parse_time(raw.get('time_created'))
         kv = self.parse_kv(raw.get('message', ''))
 
         entity_search = re.search(r'="?([^"]+)"?', kv.get('Consumer', ''))

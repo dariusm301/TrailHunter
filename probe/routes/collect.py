@@ -23,17 +23,22 @@ async def collect_data(
     
     payload = CollectionPayload.model_validate_json(raw_body)
 
-    if settings.store_local:
-        await storage.save(raw_body)
+    try:
+        if settings.store_local:
+            await storage.save(payload)
+    except Exception as e:
+        print(f"Failed to save data locally: {e}")
 
-    if verify_internet_connection():
-       if verify_analysis_server_connection(settings.analysis_server_url):
-            forward_response = await forward_to_analysis_server(payload.model_dump(), settings.analysis_server_url)
-            if forward_response.get("status") != "ok":
-                print(f"Failed to forward data to analysis server: {forward_response.get('detail')}")
-            else:
-                print("Data successfully forwarded to analysis server")
-    
+    try:
+        if verify_internet_connection():
+            if verify_analysis_server_connection(settings.analysis_server_url):
+                    forward_response = await forward_to_analysis_server(payload.model_dump(), settings.analysis_server_url)
+                    if forward_response.get("status") != "ok":
+                        print(f"Failed to forward data to analysis server: {forward_response.get('detail')}")
+                    else:
+                        print("Data successfully forwarded to analysis server")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
     return CollectResponse(
         status="ok",

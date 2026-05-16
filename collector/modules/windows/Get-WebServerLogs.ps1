@@ -12,7 +12,7 @@ function Get-WebServerLogs{
         data = @{}
         warnings = @()
     }
-
+    
      function Parse-AccessLine {
         param([string]$Line)
         $pattern = '^(\S+) \S+ \S+ \[([^\]]+)\] "(\S+) (\S+) \S+" (\d{3}) (\S+) "([^"]*)" "([^"]*)"$'

@@ -23,7 +23,7 @@ class ProcessesNormalizer(BaseNormalizer):
                 command_line=raw.get("command_line"),
                 executable=raw.get("executable_path"),
                 hash_sha256=raw.get("hash_sha256") if raw.get("hash_sha256") != "no_path" else None,
-                start=self.parse_time(raw.get("start_time")),
+                start=self._parse_time(raw.get("start_time")),
                 parent=ProcessFields(
                     pid=raw.get("parent_pid")
                 )

@@ -92,6 +92,34 @@ class UrlFields(BaseModel):
     original: str | None = None
     path: str | None = None
 
+class FileFields(BaseModel):
+    path : str | None = None
+    name : str | None = None
+    created : datetime | None = None
+
+class TargetFields(BaseModel):
+    process: ProcessFields | None = None
+
+class DNSQuestionFields(BaseModel):
+    name: str | None = None
+    type: str | None = None
+
+class DNSAnswerFields(BaseModel):
+    data: str | None = None
+    type: str | None = None
+
+class DNSFields(BaseModel):
+    question: DNSQuestionFields | None = None
+    answers: list[DNSAnswerFields] | None = None
+    response_code: str | None = None
+
+class GroupFields(BaseModel):
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    id: Optional[str] = None          
+    member_id: Optional[str] = None 
+    member_name: Optional[str] = None
+
 class NormalizedEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = Field(default_factory=datetime.now)
@@ -99,10 +127,14 @@ class NormalizedEvent(BaseModel):
     host: HostFields | None = None
     user: UserFields | None = None
     process: ProcessFields | None = None
+    target : TargetFields | None = None
     network: NetworkFields | None = None
     source: SourceFields | None = None
     destination: DestinationFields | None = None
     registry: RegistryFields | None = None
-    winlogs: WinLogsFields | None = None
+    winlog: WinLogsFields | None = None
     http: HTTPFields | None = None
     url: UrlFields | None = None
+    file: FileFields | None = None
+    dns : DNSFields | None = None
+    group: GroupFields | None = None

@@ -1,5 +1,6 @@
 from normalizers.base import BaseNormalizer
 from models.events import *
+from datetime import datetime
 
 class ApacheNormalizer(BaseNormalizer):
     
@@ -23,7 +24,7 @@ class ApacheNormalizer(BaseNormalizer):
                 dataset="apache.access",
                 module="apache",
                 original=str(raw).encode("utf-8"),
-                created=raw.get("timestamp")
+                created= datetime.strptime(raw.get("timestamp"), "%d/%b/%Y:%H:%M:%S %z")
             ),
             network=NetworkFields(
                 protocol="http",
@@ -54,6 +55,7 @@ class ApacheNormalizer(BaseNormalizer):
               "message": "AH01909: www.example.com:443:0 server certificate does NOT include an ID which matches the server name"
         }
         """
+        address, port = self._parse_host_port(raw.get("client"))
         return NormalizedEvent(
             event=EventFields(
                 action="apache_error_log",
@@ -61,13 +63,13 @@ class ApacheNormalizer(BaseNormalizer):
                 dataset="apache.error",
                 module="apache",
                 original=str(raw).encode("utf-8"),
-                created=raw.get("timestamp"),
+                created= datetime.strptime(raw.get("timestamp"), "%a %b %d %H:%M:%S.%f %Y"),
                 severity_label=raw.get("level"),
                 reason=raw.get("message")
             ),
             source=SourceFields(
-                address=raw.get("client", "").split(":")[0] if raw.get("client") else None,
-                port=int(raw.get("client", "").split(":")[1]) if raw.get("client") and ":" in raw.get("client") else None
+                address=address,
+                port=port
             )
         )
     
@@ -78,3 +80,9 @@ class ApacheNormalizer(BaseNormalizer):
             return self._normalize_error_log(raw)
         else:
             raise ValueError(f"Unsupported log type: {log_type}")
+        
+    def _parse_host_port(self, value: str | None) -> tuple[str | None, int | None]:
+        if not value or ":" not in value:
+            return value, None
+        host, _, port_str = value.rpartition(":")
+        return host or None, int(port_str) if port_str.isdigit() else None

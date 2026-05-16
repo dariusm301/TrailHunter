@@ -1,6 +1,10 @@
+import json
+
+from services.processs import process_collection
 from fastapi import APIRouter, HTTPException, Header, Request
 from typing import Optional
-from services import validator, ingestor
+from services import validator
+from services.storage import CollectionStorage
 
 router = APIRouter()
 
@@ -16,5 +20,15 @@ async def collect_data(
 
     if not validator.verify_hash(raw_body, x_collection_hash):
         raise HTTPException(status_code=400, detail="Hash mismatch - data integrity check failed")
-    ingestor.prepare(raw_body, x_collection_hash)
-    return 0
+    
+    payload = json.loads(raw_body.decode("utf-8"))
+
+    storage = CollectionStorage.create(payload['metadata']['hostname'])
+    if not storage.save_raw(raw_body, x_collection_hash):
+        raise HTTPException(status_code=400, detail="Failed to save data - hash mismatch")
+    
+    # continue with processes
+    process_collection(storage)
+
+
+    return {"status": "accepted", "hash": x_collection_hash}

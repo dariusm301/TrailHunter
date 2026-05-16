@@ -2,7 +2,7 @@ from ..base import BaseNormalizer
 from models.events import *
 from .services.parse_xml_security import _extract_task_details
 
-class WindowsSecurityNormalizer(BaseNormalizer):
+class SecurityNormalizer(BaseNormalizer):
     def normalize(self, raw : dict) -> NormalizedEvent:
         event_id = raw.get('event_id')
         parser = getattr(self, f"_parse_{event_id}", None)
@@ -58,7 +58,7 @@ class WindowsSecurityNormalizer(BaseNormalizer):
                 action="account_logged_on",
                 category="authentication",
                 code=str(raw.get('event_id')),
-                created=self.parse_time(raw.get('time_created')),
+                created=self._parse_time(raw.get('time_created')),
                 dataset="windows_security",
                 module="windows",
                 severity=1,
@@ -81,7 +81,7 @@ class WindowsSecurityNormalizer(BaseNormalizer):
                 executable= ed.get('ProcessName'),
                 name= ed.get('ProcessName').split('\\')[-1] if ed.get('ProcessName') else None,
             ),
-            winlogs=WinLogsFields(
+            winlog=WinLogsFields(
                 channel="Security",
                 event_id=raw.get('event_id'),
                 provider_name="Microsoft-Windows-Security-Auditing", 
@@ -129,7 +129,7 @@ class WindowsSecurityNormalizer(BaseNormalizer):
                 action="process_created",
                 category="process",
                 code=str(raw.get('event_id')),
-                created=self.parse_time(raw.get('time_created')),
+                created=self._parse_time(raw.get('time_created')),
                 dataset="windows_security",
                 module="windows",
                 severity=1,
@@ -151,7 +151,7 @@ class WindowsSecurityNormalizer(BaseNormalizer):
                     name= ed.get('ParentProcessName').split('\\')[-1] if ed.get('ParentProcessName') else None
                 )
             ),
-            winlogs=WinLogsFields(
+            winlog=WinLogsFields(
                 channel="Security",
                 event_id=raw.get('event_id'),
                 provider_name="Microsoft-Windows-Security-Auditing", 
@@ -191,7 +191,7 @@ class WindowsSecurityNormalizer(BaseNormalizer):
                 action="scheduled_task_updated",
                 category="persistence", 
                 code=str(raw.get('event_id')),
-                created=self.parse_time(raw.get('time_created')),
+                created=self._parse_time(raw.get('time_created')),
                 dataset="windows_security",
                 module="windows",
                 severity=1,
@@ -215,7 +215,7 @@ class WindowsSecurityNormalizer(BaseNormalizer):
                     pid=int(ed.get('ParentProcessId')) if self._clean(ed.get('ParentProcessId', '')) else None
                 )
             ),
-            winlogs=WinLogsFields(
+            winlog=WinLogsFields(
                 channel="Security",
                 event_id=raw.get('event_id'),
                 provider_name="Microsoft-Windows-Security-Auditing",
@@ -225,23 +225,142 @@ class WindowsSecurityNormalizer(BaseNormalizer):
     def _parse_4698(self, raw: dict) -> NormalizedEvent:
         """
         Event ID 4698: A scheduled task was created. Example:
-        {
-            
-        }
+         {
+          "event_id": 4698,
+          "message": "A scheduled task was created.\r\n\r\nSubject:\r\n\tSecurity ID:\t\tS-1-5-21-328477448-1921108719-1792717717-1002\r\n\tAccount Name:\t\tadmin\r\n\tAccount Domain:\t\twinmachine\r\n\tLogon ID:\t\t0xA924D\r\n\r\nTask Information:\r\n\tTask Name: \t\t\\SoftLanding\\S-1-5-21-328477448-1921108719-1792717717-1002\\SoftLandingCreativeManagementTask\r\n\tTask Content: \t\t<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n<Task version=\"1.6\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n  <Principals>\r\n    <Principal id=\"Author\">\r\n      <UserId>S-1-5-21-328477448-1921108719-1792717717-1002</UserId>\r\n      <RunLevel>LeastPrivilege</RunLevel>\r\n      <LogonType>InteractiveToken</LogonType>\r\n    </Principal>\r\n  </Principals>\r\n  <Settings>\r\n    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n    <AllowHardTerminate>true</AllowHardTerminate>\r\n    <StartWhenAvailable>true</StartWhenAvailable>\r\n    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\r\n    <AllowStartOnDemand>true</AllowStartOnDemand>\r\n    <Enabled>true</Enabled>\r\n    <Hidden>false</Hidden>\r\n    <RunOnlyIfIdle>false</RunOnlyIfIdle>\r\n    <WakeToRun>false</WakeToRun>\r\n    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>\r\n    <Priority>7</Priority>\r\n    <RestartOnFailure>\r\n      <Interval>PT4H</Interval>\r\n      <Count>5</Count>\r\n    </RestartOnFailure>\r\n  </Settings>\r\n  <Triggers>\r\n    <WnfStateChangeTrigger>\r\n      <Enabled>true</Enabled>\r\n      <StateName>7550b9a33e06830d</StateName>\r\n    </WnfStateChangeTrigger>\r\n    <TimeTrigger>\r\n      <StartBoundary>2026-05-05T11:51:00Z</StartBoundary>\r\n      <Enabled>true</Enabled>\r\n    </TimeTrigger>\r\n    <TimeTrigger>\r\n      <StartBoundary>2026-05-05T21:08:09Z</StartBoundary>\r\n      <Enabled>true</Enabled>\r\n      <Repetition>\r\n        <Interval>PT24H</Interval>\r\n        <StopAtDurationEnd>false</StopAtDurationEnd>\r\n      </Repetition>\r\n    </TimeTrigger>\r\n  </Triggers>\r\n  <Actions Context=\"Author\">\r\n    <ComHandler>\r\n      <ClassId>{F576B2F9-7850-4226-ADB0-E5993FED4F02}</ClassId>\r\n    </ComHandler>\r\n  </Actions>\r\n  <RegistrationInfo>\r\n    <URI>\\SoftLanding\\S-1-5-21-328477448-1921108719-1792717717-1002\\SoftLandingCreativeManagementTask</URI>\r\n    <SecurityDescriptor>D:P(A;;FA;;;SY)(A;CI;0x80010000;;;WD)(A;;FA;;;S-1-5-21-328477448-1921108719-1792717717-1002)</SecurityDescriptor>\r\n  </RegistrationInfo>\r\n</Task>\r\n\r\nOther Information:\r\n\tProcessCreationTime: \t\t1970324836974733\r\n\tClientProcessId: \t\t\t7024\r\n\tParentProcessId: \t\t\t1284\r\n\tFQDN: \t\t0\r\n\t",
+          "event_data": {
+            "SubjectDomainName": "winmachine",
+            "SubjectLogonId": "0xa924d",
+            "SubjectUserSid": "S-1-5-21-328477448-1921108719-1792717717-1002",
+            "TaskContent": "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n<Task version=\"1.6\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n  <Principals>\n    <Principal id=\"Author\">\n      <UserId>S-1-5-21-328477448-1921108719-1792717717-1002</UserId>\n      <RunLevel>LeastPrivilege</RunLevel>\n      <LogonType>InteractiveToken</LogonType>\n    </Principal>\n  </Principals>\n  <Settings>\n    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n    <AllowHardTerminate>true</AllowHardTerminate>\n    <StartWhenAvailable>true</StartWhenAvailable>\n    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\n    <AllowStartOnDemand>true</AllowStartOnDemand>\n    <Enabled>true</Enabled>\n    <Hidden>false</Hidden>\n    <RunOnlyIfIdle>false</RunOnlyIfIdle>\n    <WakeToRun>false</WakeToRun>\n    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>\n    <Priority>7</Priority>\n    <RestartOnFailure>\n      <Interval>PT4H</Interval>\n      <Count>5</Count>\n    </RestartOnFailure>\n  </Settings>\n  <Triggers>\n    <WnfStateChangeTrigger>\n      <Enabled>true</Enabled>\n      <StateName>7550b9a33e06830d</StateName>\n    </WnfStateChangeTrigger>\n    <TimeTrigger>\n      <StartBoundary>2026-05-05T11:51:00Z</StartBoundary>\n      <Enabled>true</Enabled>\n    </TimeTrigger>\n    <TimeTrigger>\n      <StartBoundary>2026-05-05T21:08:09Z</StartBoundary>\n      <Enabled>true</Enabled>\n      <Repetition>\n        <Interval>PT24H</Interval>\n        <StopAtDurationEnd>false</StopAtDurationEnd>\n      </Repetition>\n    </TimeTrigger>\n  </Triggers>\n  <Actions Context=\"Author\">\n    <ComHandler>\n      <ClassId>{F576B2F9-7850-4226-ADB0-E5993FED4F02}</ClassId>\n    </ComHandler>\n  </Actions>\n  <RegistrationInfo>\n    <URI>\\SoftLanding\\S-1-5-21-328477448-1921108719-1792717717-1002\\SoftLandingCreativeManagementTask</URI>\n    <SecurityDescriptor>D:P(A;;FA;;;SY)(A;CI;0x80010000;;;WD)(A;;FA;;;S-1-5-21-328477448-1921108719-1792717717-1002)</SecurityDescriptor>\n  </RegistrationInfo>\n</Task>",
+            "FQDN": "winmachine",
+            "ParentProcessId": "1284",
+            "SubjectUserName": "admin",
+            "RpcCallClientLocality": "0",
+            "ClientProcessId": "7024",
+            "TaskName": "\\SoftLanding\\S-1-5-21-328477448-1921108719-1792717717-1002\\SoftLandingCreativeManagementTask",
+            "ClientProcessStartKey": "1970324836974733"
+          },
+          "time_created": "2026-05-05T11:21:15Z"
+        },
         """
 
     def _parse_4720(self, raw: dict) -> NormalizedEvent:
         """
         Event ID 4720: A user account was created. Example:
         {
-            
-        }
+          "event_id": 4720,
+          "message": "A user account was created.\r\n\r\nSubject:\r\n\tSecurity ID:\t\tS-1-5-18\r\n\tAccount Name:\t\tWINMACHINE$\r\n\tAccount Domain:\t\tWORKGROUP\r\n\tLogon ID:\t\t0x3E7\r\n\r\nNew Account:\r\n\tSecurity ID:\t\tS-1-5-21-328477448-1921108719-1792717717-1003\r\n\tAccount Name:\t\tattacker\r\n\tAccount Domain:\t\twinmachine\r\n\r\nAttributes:\r\n\tSAM Account Name:\tattacker\r\n\tDisplay Name:\t\t<value not set>\r\n\tUser Principal Name:\t-\r\n\tHome Directory:\t\t<value not set>\r\n\tHome Drive:\t\t<value not set>\r\n\tScript Path:\t\t<value not set>\r\n\tProfile Path:\t\t<value not set>\r\n\tUser Workstations:\t<value not set>\r\n\tPassword Last Set:\t<never>\r\n\tAccount Expires:\t\t<never>\r\n\tPrimary Group ID:\t513\r\n\tAllowed To Delegate To:\t-\r\n\tOld UAC Value:\t\t0x0\r\n\tNew UAC Value:\t\t0x15\r\n\tUser Account Control:\t\r\n\t\tAccount Disabled\r\n\t\t'Password Not Required' - Enabled\r\n\t\t'Normal Account' - Enabled\r\n\tUser Parameters:\t<value not set>\r\n\tSID History:\t\t-\r\n\tLogon Hours:\t\tAll\r\n\r\nAdditional Information:\r\n\tPrivileges\t\t-",
+          "event_data": {
+            "HomePath": "%%1793",
+            "SubjectUserName": "WINMACHINE$",
+            "NewUacValue": "0x15",
+            "UserPrincipalName": "-",
+            "SubjectLogonId": "0x3e7",
+            "DisplayName": "%%1793",
+            "ProfilePath": "%%1793",
+            "UserAccountControl": "\n\t\t%%2080\n\t\t%%2082\n\t\t%%2084",
+            "PrivilegeList": "-",
+            "SamAccountName": "attacker",
+            "UserParameters": "%%1793",
+            "AllowedToDelegateTo": "-",
+            "LogonHours": "%%1797",
+            "SubjectUserSid": "S-1-5-18",
+            "ScriptPath": "%%1793",
+            "HomeDirectory": "%%1793",
+            "OldUacValue": "0x0",
+            "AccountExpires": "%%1794",
+            "PrimaryGroupId": "513",
+            "SubjectDomainName": "WORKGROUP",
+            "UserWorkstations": "%%1793",
+            "TargetSid": "S-1-5-21-328477448-1921108719-1792717717-1003",
+            "PasswordLastSet": "%%1794",
+            "SidHistory": "-",
+            "TargetDomainName": "winmachine",
+            "TargetUserName": "attacker"
+          },
+          "time_created": "2026-05-05T12:29:18Z"
+        },
         """
+        ed = raw.get('event_data', {})
+        return NormalizedEvent(
+            event=EventFields(
+                action="user_account_created",
+                category="iam",
+                code=str(raw.get('event_id')),
+                created=self._parse_time(raw.get('time_created')),
+                dataset="windows_security",
+                module="windows",
+                severity=3,  # account creation e întotdeauna notabil
+                original=raw.get('message', '').encode('utf-8'),
+                provider="Microsoft-Windows-Security-Auditing",
+            ),
+            user=UserFields(
+                # target = contul nou creat, mai relevant decât subiectul
+                name=self._clean(ed.get('TargetUserName')),
+                domain=self._clean(ed.get('TargetDomainName')),
+                id=self._clean(ed.get('TargetSid'))
+            ),
+            winlog=WinLogsFields(
+                channel="Security",
+                event_id=raw.get('event_id'),
+                provider_name="Microsoft-Windows-Security-Auditing",
+            )
+    )
 
     def _parse_4732(self, raw: dict) -> NormalizedEvent:
         """
         Event ID 4732: A member was added to a security-enabled local group. Example:
         {
-            
-        }
+          "event_id": 4732,
+          "message": "A member was added to a security-enabled local group.\r\n\r\nSubject:\r\n\tSecurity ID:\t\tS-1-5-18\r\n\tAccount Name:\t\tWINMACHINE$\r\n\tAccount Domain:\t\tWORKGROUP\r\n\tLogon ID:\t\t0x3E7\r\n\r\nMember:\r\n\tSecurity ID:\t\tS-1-5-21-328477448-1921108719-1792717717-1003\r\n\tAccount Name:\t\t-\r\n\r\nGroup:\r\n\tSecurity ID:\t\tS-1-5-32-544\r\n\tGroup Name:\t\tAdministrators\r\n\tGroup Domain:\t\tBuiltin\r\n\r\nAdditional Information:\r\n\tPrivileges:\t\t-",
+          "event_data": {
+            "SubjectDomainName": "WORKGROUP",
+            "TargetUserName": "Administrators",
+            "SubjectUserSid": "S-1-5-18",
+            "PrivilegeList": "-",
+            "TargetSid": "S-1-5-32-544",
+            "MemberSid": "S-1-5-21-328477448-1921108719-1792717717-1003",
+            "SubjectLogonId": "0x3e7",
+            "SubjectUserName": "WINMACHINE$",
+            "MemberName": "-",
+            "TargetDomainName": "Builtin"
+          },
+          "time_created": "2026-05-05T12:29:18Z"
+        },
         """
+        ed = raw.get('event_data', {})
+
+        group_name = self._clean(ed.get('TargetUserName'))
+        is_admin_group = group_name and group_name.lower() == "administrators"
+
+        return NormalizedEvent(
+            event=EventFields(
+                action="user_added_to_group",
+                category="iam",
+                code=str(raw.get('event_id')),
+                created=self._parse_time(raw.get('time_created')),
+                dataset="windows_security",
+                module="windows",
+                severity=4 if is_admin_group else 2, 
+                original=raw.get('message', '').encode('utf-8'),
+                provider="Microsoft-Windows-Security-Auditing",
+            ),
+            user=UserFields(
+                name=self._clean(ed.get('SubjectUserName')),
+                domain=self._clean(ed.get('SubjectDomainName')),
+                id=self._clean(ed.get('SubjectUserSid'))
+            ),
+            group=GroupFields(
+                name=group_name,
+                domain=self._clean(ed.get('TargetDomainName')),
+                id=self._clean(ed.get('TargetSid')),
+                member_id=self._clean(ed.get('MemberSid')),
+                member_name=self._clean(ed.get('MemberName')),
+            ),
+            winlog=WinLogsFields(
+                channel="Security",
+                event_id=raw.get('event_id'),
+                provider_name="Microsoft-Windows-Security-Auditing",
+            )
+        )

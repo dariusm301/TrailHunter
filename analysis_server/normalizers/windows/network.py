@@ -3,23 +3,28 @@ from models.events import *
 class NetworkNormalizer(BaseNormalizer):
 
     def _parse_interfaces(self, raw : dict) -> NormalizedEvent:
-        return NormalizedEvent(
-            event=EventFields(
-                action="network_interface_snapshot",
-                category="configuration",
-                dataset="windows.network",
-                module="windows",
-                original=str(raw).encode("utf-8")
-            ),
-            host=HostFields(
-                ip=raw.get("ip_address")   
-            ),
-            network=NetworkFields(
-                name=raw.get("interface"),
-                gateway=raw.get("gateway"),
-                dns_servers=raw.get("dns_servers")
+        try:
+            result = NormalizedEvent(
+                event=EventFields(
+                    action="network_interface_snapshot",
+                    category="configuration",
+                    dataset="windows.network",
+                    module="windows",
+                    original=str(raw).encode("utf-8")
+                ),
+                host=HostFields(
+                    ip=raw.get("ip_address")   
+                ),
+                network=NetworkFields(
+                    name=raw.get("interface"),
+                    gateway=raw.get("gateway"),
+                    dns_servers=raw.get("dns_servers")
+                )
             )
-        )
+        except Exception as e:
+            print(f"Error parsing network interface {raw}: {e}")
+            return None
+        return result
     
     def _parse_tcp_connections(self, raw : dict) -> NormalizedEvent:
         return NormalizedEvent(

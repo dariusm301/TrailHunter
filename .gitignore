@@ -23,3 +23,6 @@ teste
 get*
 test*
 *.xml
+
+*.zip 
+collections/

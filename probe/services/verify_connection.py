@@ -11,10 +11,9 @@ def verify_internet_connection():
 def verify_analysis_server_connection(analysis_server_url):
     try:
         host, port = analysis_server_url.replace("http://", "").split(":")
-        with socket.create_connection((host, int(port)), timeout=5):
+        port = int(port.split('/')[0])
+        with socket.create_connection((host, port), timeout=5):
             return {"status": "ok"}
     except socket.error:
         return {"status": "error"}
     
-
-print(verify_analysis_server_connection("localhost:80"))
