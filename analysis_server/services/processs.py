@@ -205,9 +205,9 @@ def process_collection(storage: CollectionStorage):
                 "scheduled_tasks": len(scheduled_tasks_events_normalized),
                 "web_logs": len(apache_logs_normalized)
             },
-            "hashes": {
+            "hashes": 
                 payload.get('module_hashes', {})
-            }
+            
             
         }
     )

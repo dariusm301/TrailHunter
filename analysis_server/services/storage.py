@@ -5,6 +5,7 @@ from pathlib import Path
 from services.validator import compute_hash
 from datetime import datetime, timezone
 from models.events import NormalizedEvent
+from detection.models import DetectionReport
 
 
 COLLECTIONS_ROOT = Path("collections")
@@ -17,6 +18,7 @@ class CollectionStorage:
         self.base_path = COLLECTIONS_ROOT / hostname / timestamp
         self.raw_path = self.base_path / "raw"
         self.processed_path = self.base_path / "processed"
+        self.reports_path = self.base_path / "reports"
 
     @classmethod
     def create(cls, hostname: str) -> "CollectionStorage":
@@ -27,8 +29,10 @@ class CollectionStorage:
         return instance
 
     @classmethod
-    def load(cls, hostname: str, timestamp: str) -> "CollectionStorage":
+    def load(cls, collection_id: str) -> "CollectionStorage":
         """Load an existing collection (for later analysis)."""
+        # Assuming collection_id is in the format "hostname/timestamp"
+        hostname, timestamp = collection_id.split("/", 1)
         instance = cls(hostname, timestamp)
         if not instance.base_path.exists():
             raise FileNotFoundError(f"Collection not found: {instance.base_path}")
@@ -37,7 +41,7 @@ class CollectionStorage:
     def _create_dirs(self):
         self.raw_path.mkdir(parents=True, exist_ok=True)
         self.processed_path.mkdir(parents=True, exist_ok=True)
-
+        self.reports_path.mkdir(parents=True, exist_ok=True)
     # -------------------------
     # RAW
     # -------------------------
@@ -72,11 +76,11 @@ class CollectionStorage:
         path = self.processed_path / f"{channel}.json"
         path.write_text(json.dumps([e.model_dump(mode="json") for e in events], indent=2))
 
-    def load_channel(self, channel: str) -> list[dict]:
+    def load_channel(self, channel: str) -> list[NormalizedEvent]:
         path = self.processed_path / f"{channel}.json"
         if not path.exists():
             return []
-        return json.loads(path.read_text(encoding="utf-8"))
+        return [NormalizedEvent(**e) for e in json.loads(path.read_text(encoding="utf-8"))]
 
     def save_summary(self, summary: dict):
         path = self.base_path / "summary.json"
@@ -87,6 +91,10 @@ class CollectionStorage:
         if not path.exists():
             return {}
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def save_report(self, channel :str, report: DetectionReport):
+        path = self.reports_path / f"{channel}.json"
+        path.write_text(json.dumps(report.model_dump(), indent=2, default=str), encoding="utf-8")
 
     def available_channels(self) -> list[str]:
         """Return the list of available normalized channels for this collection."""

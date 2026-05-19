@@ -244,6 +244,69 @@ class SecurityNormalizer(BaseNormalizer):
           "time_created": "2026-05-05T11:21:15Z"
         },
         """
+        ed = raw.get('event_data', {})
+        task_name = self._clean(ed.get('TaskName'))
+        
+        task_details = _extract_task_details(ed.get('TaskContent'))
+        executable = task_details["command"] or task_details["com_class"]
+        process_args = task_details["arguments"].split() if task_details["arguments"] else None
+
+        is_system_path = task_name and any(
+            task_name.startswith(p) for p in [
+                "\\Microsoft\\", "\\Windows\\"
+            ]
+        )
+        uses_com_handler = task_details["com_class"] is not None
+        is_hidden = task_details.get("hidden", False)
+
+        if uses_com_handler and not is_system_path:
+            severity = 4  
+        elif not is_system_path or is_hidden:
+            severity = 3
+        else:
+            severity = 1 
+
+        return NormalizedEvent(
+            event=EventFields(
+                action="scheduled_task_created",
+                category="persistence",
+                code=str(raw.get('event_id')),
+                created=self._parse_time(raw.get('time_created')),
+                dataset="windows_security",
+                module="windows",
+                severity=severity,
+                original=raw.get('message', '').encode('utf-8'),
+                provider="Microsoft-Windows-Security-Auditing",
+            ),
+            user=UserFields(
+                name=self._clean(ed.get('SubjectUserName')),
+                domain=self._clean(ed.get('SubjectDomainName')),
+                id=self._clean(ed.get('SubjectUserSid'))
+            ),
+            host=HostFields(
+                hostname=self._clean(ed.get('FQDN'))
+            ),
+            process=ProcessFields(
+                pid=int(ed.get('ClientProcessId')) if self._clean(ed.get('ClientProcessId', '')) else None,
+                executable=executable,
+                args=process_args,
+                command_line=task_name,
+                parent=ProcessFields(
+                    pid=int(ed.get('ParentProcessId')) if self._clean(ed.get('ParentProcessId', '')) else None
+                )
+            ),
+            winlog=WinLogsFields(
+                channel="Security",
+                event_id=raw.get('event_id'),
+                provider_name="Microsoft-Windows-Security-Auditing",
+                extra={
+                    "task_name": task_name,
+                    "uses_com_handler": uses_com_handler,
+                    "com_class": task_details["com_class"],
+                    "is_hidden": is_hidden,
+                }
+            )
+        )
 
     def _parse_4720(self, raw: dict) -> NormalizedEvent:
         """

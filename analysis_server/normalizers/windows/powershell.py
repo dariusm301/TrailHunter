@@ -17,7 +17,6 @@ class PowerShellNormalizer(BaseNormalizer):
         ed = raw.get("event_data", {})
         script_content = ed.get("ScriptBlockText", "")
         
-        # Analiză de severitate bazată pe cuvinte cheie suspecte (Simple Heuristics)
         suspicious_keywords = ["-enc", "base64", "iex", "invoke-expression", "bypass", "hidden"]
         is_suspicious = any(k in script_content.lower() for k in suspicious_keywords)
         severity = 4 if is_suspicious else 2
@@ -35,7 +34,6 @@ class PowerShellNormalizer(BaseNormalizer):
                 original=raw.get("message", "").encode("utf-8"),
                 provider="Microsoft-Windows-PowerShell",
             ),
-            # PowerShell logs includ adesea contextul utilizatorului în metadata
             user=UserFields(
                 name=self._clean(ed.get("UserId", "").split("\\")[-1]),
             ),
@@ -46,13 +44,13 @@ class PowerShellNormalizer(BaseNormalizer):
                 extra={
                     "script_block_text": script_content,
                     "script_block_id": ed.get("ScriptBlockId"),
-                    "path": ed.get("Path"), # Calea scriptului dacă este salvat pe disc
+                    "path": ed.get("Path"), 
                 },
             ),
         )
 
     # ─────────────────────────────────────────────
-    # Event 4103 — Module Logging (Pipeline Execution)
+    # Event 4103 — Logging module (Pipeline Execution)
     # ─────────────────────────────────────────────
     def _parse_4103(self, raw: dict) -> NormalizedEvent:
         ed = raw.get("event_data", {})

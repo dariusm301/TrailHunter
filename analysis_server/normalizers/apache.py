@@ -37,7 +37,7 @@ class ApacheNormalizer(BaseNormalizer):
             http=HTTPFields(
                 request_method=raw.get("method"),
                 response_status_code=raw.get("status_code"),
-                agent=raw.get("user_agent")
+                user_agent=raw.get("user_agent")
             ),
             url=UrlFields(
                 original=raw.get("referer"),

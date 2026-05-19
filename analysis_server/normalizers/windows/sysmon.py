@@ -43,7 +43,7 @@ class SysmonNormalizer(BaseNormalizer):
                 args=args or None,
                 args_count=len(args) or None,
                 working_directory=ed.get("CurrentDirectory"),
-                hash=ed.get("Hashes"),
+                hash_sha256=ed.get("Hashes"),
                 parent=ProcessFields(
                     pid=int(ed.get("ParentProcessId")) if self._clean(ed.get("ParentProcessId")) else None,
                     executable=ed.get("ParentImage"),
@@ -173,7 +173,7 @@ class SysmonNormalizer(BaseNormalizer):
             file=FileFields(
                 path=ed.get("ImageLoaded"),
                 name=ed.get("ImageLoaded", "").split("\\")[-1] or None,
-                hash=ed.get("Hashes"),
+                hash_sha256=ed.get("Hashes"),
                 code_signature=ed.get("SignatureStatus"),
             ),
             winlog=WinLogsFields(
@@ -257,13 +257,14 @@ class SysmonNormalizer(BaseNormalizer):
                 pid=int(ed.get("SourceProcessId")) if self._clean(ed.get("SourceProcessId")) else None,
                 executable=ed.get("SourceImage"),
                 name=ed.get("SourceImage", "").split("\\")[-1] or None,
-                target=TargetFields(
+                
+            ),
+            target=TargetFields(
                     process=ProcessFields(
                         pid=int(ed.get("TargetProcessId")) if self._clean(ed.get("TargetProcessId")) else None,
                         executable=ed.get("TargetImage"),
                         name=ed.get("TargetImage", "").split("\\")[-1] or None,
                     )
-                ),
             ),
             winlog=WinLogsFields(
                 channel="Microsoft-Windows-Sysmon/Operational",

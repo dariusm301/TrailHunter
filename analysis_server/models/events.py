@@ -81,12 +81,13 @@ class WinLogsFields (BaseModel):
     event_id : int | None = None
     provider_name : str | None = None
     computer_name : str | None = None
+    extra : str | None = None
 
 
 class HTTPFields(BaseModel):
     request_method: str | None = None
     response_status_code: int | None = None
-    agent : str | None = None
+    user_agent : str | None = None
 
 class UrlFields(BaseModel):
     original: str | None = None
