@@ -1,5 +1,5 @@
 param(
-    $ServerUrl = "http://192.168.0.137:8000",
+    $ServerUrl = "http://172.28.112.1:8000",
     $TimeRangeHours = 2
 )
 $Hostname = $env:COMPUTERNAME

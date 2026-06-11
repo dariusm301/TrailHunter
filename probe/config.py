@@ -8,7 +8,7 @@ DATA_DIR = BASE_DIR / "data"
 class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
-    analysis_server_url: str = "http://localhost:80/api/ingest"
+    analysis_server_url: str = "http://localhost:80"
     store_local: bool = True
 
     class Config:

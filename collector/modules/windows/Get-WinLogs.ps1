@@ -107,10 +107,10 @@ function Get-WinLogs{
     }
 
 
+    # --- PowerShell events ----
     try {
         $psEvents = Get-WinEvent -FilterHashtable @{
             LogName   = 'Microsoft-Windows-PowerShell/Operational'
-            Id        = 4104
             StartTime = $StartTime
         } -ErrorAction Stop
 
@@ -119,8 +119,12 @@ function Get-WinLogs{
         Write-Host "[+] PowerShell: $($winlogs_result.powershell.Count) events"
     }
     catch {
-        Write-Host "[-] PowerShell log not available: $($_.Exception.Message)" -ForegroundColor Yellow
-        $winlogs_result.warnings += "PowerShell log not available"
+        if ($_.Exception.Message -like "*No events were found*") {
+            Write-Host "[*] PowerShell: no 4104 events in last $TimeRangeHours hours" -ForegroundColor Cyan
+        } else {
+            Write-Host "[-] PowerShell log not available: $($_.Exception.Message)" -ForegroundColor Yellow
+            $winlogs_result.warnings += "PowerShell log not available: $($_.Exception.Message)"
+        }
     }
 
 
@@ -139,8 +143,43 @@ function Get-WinLogs{
             Write-Host "[+] $logName`: $($winlogs_result[$logName.ToLower()].Count) events"
         }
         catch {
-            Write-Host "[-] $logName events: $($_.Exception.Message)" -ForegroundColor Red
-            $winlogs_result.warnings += "$logName collection failed: $($_.Exception.Message)"
+            if ($_.Exception.Message -notlike "*No events were found*") {
+                Write-Host "[-] $logName events: $($_.Exception.Message)" -ForegroundColor Red
+                $winlogs_result.warnings += "$logName collection failed: $($_.Exception.Message)"
+            } else {
+                Write-Host "[*] $logName`: no level 2/3 events in window" -ForegroundColor Cyan
+            }
+        }
+        $systemCriticalIds = @(
+            7045,  # New service installed        → Persistence
+            7040,  # Service start type changed   → Defense evasion
+            104,   # System log cleared           → Defense evasion
+            6008,  # Unexpected shutdown          → Crash/kill indicator
+            6005,  # System startup               → Timeline anchor
+            6006   # System shutdown              → Timeline anchor
+        )
+
+        try {
+            $criticalEvents = Get-WinEvent -FilterHashtable @{
+                LogName   = 'System'
+                Id        = $systemCriticalIds
+                StartTime = $StartTime
+            } -ErrorAction Stop
+
+            $criticalDicts = $criticalEvents | ForEach-Object { Convert-EventToDict $_ }
+
+            $existing = $winlogs_result['system'] | ForEach-Object { $_['time_created'] + $_['event_id'] }
+            $new = $criticalDicts | Where-Object {
+                ($_.time_created + $_.event_id) -notin $existing
+            }
+            $winlogs_result['system'] += $new
+
+            Write-Host "[+] System critical IDs: $($new.Count) additional events (7045/7040/104/6008)"
+        }
+        catch {
+            if ($_.Exception.Message -notlike "*No events were found*") {
+                Write-Host "[-] System critical IDs: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
         }
     }
     return $winlogs_result

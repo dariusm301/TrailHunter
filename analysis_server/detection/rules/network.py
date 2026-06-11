@@ -16,7 +16,7 @@ from detection.models import (
 # ─────────────────────────────────────────────
 
 def _ts(event: NormalizedEvent) -> datetime:
-    return event.timestamp or datetime.now(timezone.utc)
+    return event.timestamp or None
 
 def _action(event: NormalizedEvent) -> str:
     return (event.event.action or "") if event.event else ""
@@ -65,7 +65,7 @@ class SuspiciousProcessListeningRule(PerEventRule):
     """Suspicious process in LISTEN state — potential backdoor."""
     rule_id = "NET_SUSPICIOUS_LISTENER_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) not in ("tcp_listen", "listening_port"):
             return None
 
@@ -78,6 +78,7 @@ class SuspiciousProcessListeningRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Process Listening",
+            rule_type="per_event",
             severity=Severity.CRITICAL,
             confidence=0.92,
             technique_id="T1571",
@@ -88,7 +89,7 @@ class SuspiciousProcessListeningRule(PerEventRule):
             source="network",
             description=f"'{process}' is listening on port {port} — possible backdoor",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "process": process,
                 "pid": event.process.pid if event.process else None,
@@ -101,7 +102,7 @@ class SuspiciousPortListeningRule(PerEventRule):
     """Known port for reverse shell in state LISTEN."""
     rule_id = "NET_SUSPICIOUS_PORT_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) not in ("tcp_listen", "listening_port"):
             return None
 
@@ -114,6 +115,7 @@ class SuspiciousPortListeningRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Port Listening",
+            rule_type="per_event",
             severity=Severity.HIGH,
             confidence=0.85,
             technique_id="T1571",
@@ -124,7 +126,7 @@ class SuspiciousPortListeningRule(PerEventRule):
             source="network",
             description=f"Suspicious port {port} in LISTEN — process: '{process}'",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "port": port,
                 "process": process,
@@ -137,7 +139,7 @@ class ReverseShellConnectionRule(PerEventRule):
     """ESTABLISHED Connection: suspect process + suspicious port."""
     rule_id = "NET_REVERSE_SHELL_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) not in ("tcp_established", "tcp_closewait"):
             return None
 
@@ -168,6 +170,7 @@ class ReverseShellConnectionRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Active Reverse Shell Connection",
+            rule_type="per_event",
             severity=severity,
             confidence=confidence,
             technique_id="T1059",
@@ -178,7 +181,7 @@ class ReverseShellConnectionRule(PerEventRule):
             source="network",
             description=description,
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "process": process,
                 "pid": event.process.pid if event.process else None,
@@ -194,7 +197,7 @@ class SuspiciousOutboundConnectionRule(PerEventRule):
     """Suspicious process with active outbound connection — even on legitimate ports."""
     rule_id = "NET_SUSPICIOUS_OUTBOUND_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) not in ("tcp_established", "tcp_closewait"):
             return None
 
@@ -211,6 +214,7 @@ class SuspiciousOutboundConnectionRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Process Outbound Connection",
+            rule_type="per_event",
             severity=Severity.HIGH,
             confidence=0.78,
             technique_id="T1071.001",
@@ -221,7 +225,7 @@ class SuspiciousOutboundConnectionRule(PerEventRule):
             source="network",
             description=f"'{process}' has an active outbound connection → {dst_ip}:{dst_port}",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "process": process,
                 "pid": event.process.pid if event.process else None,
@@ -234,28 +238,29 @@ class SuspiciousOutboundConnectionRule(PerEventRule):
 class SuspiciousInboundSSHRule(PerEventRule):
     rule_id = "NET_SUSPICIOUS_SSH_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) != "tcp_established":
             return None
         if _process_name(event) != "sshd":
             return None
 
-        src_ip = _src_ip(event)
+        dst_ip = _dst_ip(event)
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Inbound SSH Connection",
+            rule_type="per_event",
             severity=Severity.MEDIUM,
             confidence=0.75,
             technique_id="T1021.004",
             technique_name="Remote Services: SSH",
             tactic=MitreTactic.LATERAL_MOVEMENT,
-            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            kill_chain_phase=KillChainPhase.COMMAND_AND_CONTROL,
             tags=["ssh", "inbound", "network", "live"],
             source="network",
-            description=f"SSH connection from {src_ip}",
+            description=f"SSH connection from {dst_ip}",
             timestamp=_ts(event),
-            triggered_by=[index],
-            extra={"remote_ip": src_ip, "process": "sshd"}
+            triggered_by=[event.id],
+            extra={"remote_ip": dst_ip, "process": "sshd"}
         )
 
 # ═════════════════════════════════════════════
@@ -280,7 +285,7 @@ class ArpPoisoningRule(AggregateRule):
                 mac = data.get("mac_address", "").lower()
                 ip = data.get("ip_address", "")
                 if mac and ip and mac != "ff:ff:ff:ff:ff:ff":
-                    mac_to_ips[mac].append((i, ip))
+                    mac_to_ips[mac].append((e.id, ip))
             except Exception:
                 continue
 
@@ -288,23 +293,24 @@ class ArpPoisoningRule(AggregateRule):
             if len(entries) < 2:
                 continue
 
-            indices = [i for i, _ in entries]
+            ids = [event_id for event_id, _ in entries]
             ips = [ip for _, ip in entries]
 
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="ARP Poisoning Detected",
+                rule_type="aggregate",
                 severity=Severity.HIGH,
                 confidence=0.85,
                 technique_id="T1557.002",
                 technique_name="ARP Cache Poisoning",
                 tactic=MitreTactic.LATERAL_MOVEMENT,
-                kill_chain_phase=KillChainPhase.EXPLOITATION,
+                kill_chain_phase= KillChainPhase.EXPLOITATION,
                 tags=["arp", "poisoning", "network", "live"],
                 source="network",
                 description=f"MAC '{mac}' associated with {len(ips)} IP addresses: {ips}",
-                timestamp=datetime.now(timezone.utc),
-                triggered_by=indices,
+                timestamp=events[ids[0]].timestamp if events[ids[0]] else None,
+                triggered_by=ids,
                 event_count=len(entries),
                 extra={"mac": mac, "ip_addresses": ips}
             ))

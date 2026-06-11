@@ -1,5 +1,3 @@
-# detection/rules/wmi.py
-
 from __future__ import annotations
 import re
 from datetime import datetime, timezone
@@ -10,6 +8,7 @@ from detection.engine import PerEventRule, AggregateRule
 from detection.models import (
     DetectionFinding, Severity,
     MitreTactic, KillChainPhase,
+    Capability
 )
 
 # ─────────────────────────────────────────────
@@ -17,7 +16,7 @@ from detection.models import (
 # ─────────────────────────────────────────────
 
 def _ts(event: NormalizedEvent) -> datetime:
-    return event.event.created or event.timestamp or datetime.now(timezone.utc)
+    return event.event.created or event.timestamp or None
 
 def _action(event: NormalizedEvent) -> str:
     return (event.event.action or "") if event.event else ""
@@ -36,6 +35,8 @@ def _username(event: NormalizedEvent) -> Optional[str]:
 def _pid(event: NormalizedEvent) -> Optional[int]:
     return event.process.pid if event.process else None
 
+def _host(event: NormalizedEvent) -> Optional[str]:
+    return event.host.name if event.host else None  
 
 # ─────────────────────────────────────────────
 # Patterns
@@ -73,8 +74,6 @@ _LEGITIMATE_SUBSCRIPTIONS = re.compile(
     re.IGNORECASE
 )
 
-MAX_INDICES = 20
-
 # ═════════════════════════════════════════════
 # PER-EVENT RULES
 # ═════════════════════════════════════════════
@@ -83,7 +82,7 @@ class WmiSubscriptionCreatedRule(PerEventRule):
     """Event 5861 — WMI event subscription created = persistence mechanism."""
     rule_id = "WMI_SUBSCRIPTION_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) != "wmi_event_subscription_created":
             return None
 
@@ -102,6 +101,8 @@ class WmiSubscriptionCreatedRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="WMI Event Subscription Created",
+            requires=[Capability("code_execution", bind=("host",))],
+            provides=[Capability("persistence", bind=("host",))],
             severity=severity,
             confidence=confidence,
             technique_id="T1546.003",
@@ -112,12 +113,16 @@ class WmiSubscriptionCreatedRule(PerEventRule):
             source="wmi",
             description=f"WMI event subscription created by '{_username(event)}'",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "username": _username(event),
                 "pid": _pid(event),
                 "has_suspicious_content": has_suspicious_content,
                 "raw": original[:300],
+            },
+            entities={
+                "host": _host(event),
+                "user": _username(event),
             }
         )
 

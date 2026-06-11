@@ -8,6 +8,7 @@ from detection.engine import PerEventRule, AggregateRule
 from detection.models import (
     DetectionFinding, Severity,
     MitreTactic, KillChainPhase,
+    Capability
 )
 
 # ─────────────────────────────────────────────
@@ -15,13 +16,16 @@ from detection.models import (
 # ─────────────────────────────────────────────
 
 def _ts(event: NormalizedEvent) -> datetime:
-    return event.timestamp or datetime.now(timezone.utc)
+    return event.timestamp or None
 
 def _path(event: NormalizedEvent) -> str:
     return (event.registry.path or "").lower() if event.registry else ""
 
-def _value(event: NormalizedEvent) -> str:
-    return (event.registry.value or "").lower() if event.registry else ""
+def _value(event: NormalizedEvent) -> str: 
+    v = event.registry.value if event.registry else None
+    if isinstance(v, list):
+        v = v[0] if v else None
+    return (v or "")
 
 def _data(event: NormalizedEvent) -> str:
     return (event.registry.data or "").lower() if event.registry else ""
@@ -97,7 +101,7 @@ class RunKeyPersistenceRule(PerEventRule):
     """Suspicious executable in Run key — persistence."""
     rule_id = "REG_RUNKEY_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         path = _path(event)
         
         data = _data(event)
@@ -122,10 +126,15 @@ class RunKeyPersistenceRule(PerEventRule):
         else:
             severity = Severity.HIGH
             confidence = 0.80
+        
+        value_name = value
 
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Run Key Entry",
+            rule_type="per_event",
+            requires=(Capability("runkey_created", bind=("value_name",), values=(value_name,)),),
+            provides=(),
             severity=severity,
             confidence=confidence,
             technique_id="T1547.001",
@@ -136,7 +145,7 @@ class RunKeyPersistenceRule(PerEventRule):
             source="registry",
             description=f"Run key suspect: '{value}' → '{data[:100]}'",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "registry_path": path,
                 "value_name": value,
@@ -150,7 +159,7 @@ class DefenderExclusionRegistryRule(PerEventRule):
     """Defender exclusion set in registry — defense evasion."""
     rule_id = "REG_DEFENDER_EXCLUSION_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         path = _path(event)
         if not _DEFENDER_EXCLUSION_PATHS.search(path):
             return None
@@ -161,6 +170,7 @@ class DefenderExclusionRegistryRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Windows Defender Exclusion in Registry",
+            rule_type="per_event",
             severity=Severity.CRITICAL,
             confidence=0.95,
             technique_id="T1562.001",
@@ -171,7 +181,7 @@ class DefenderExclusionRegistryRule(PerEventRule):
             source="registry",
             description=f"Defender exclusion detected in registry: '{value}'",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "registry_path": path,
                 "value_name": value,
@@ -184,7 +194,7 @@ class SuspiciousServiceRegistryRule(PerEventRule):
     """Suspect service in HKLM\\Services."""
     rule_id = "REG_SUSPICIOUS_SERVICE_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         path = _path(event)
         if "currentcontrolset\\services" not in path:
             return None
@@ -204,6 +214,7 @@ class SuspiciousServiceRegistryRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Service Registry Entry",
+            rule_type="per_event",
             severity=Severity.HIGH,
             confidence=0.85,
             technique_id="T1543.003",
@@ -214,7 +225,7 @@ class SuspiciousServiceRegistryRule(PerEventRule):
             source="registry",
             description=f"Suspect service in registry: '{value}' → '{data[:100]}'",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "registry_path": path,
                 "service_name": value,

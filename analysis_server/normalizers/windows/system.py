@@ -35,8 +35,8 @@ class SystemNormalizer(BaseNormalizer):
                 provider="Service Control Manager",
             ),
             user=UserFields(
-                name=self._clean(ed.get("AccountName", "").split("\\")[-1]),
-                domain=self._clean(ed.get("AccountName", "").split("\\")[0] if "\\" in ed.get("AccountName", "") else None),
+                name=self._clean(ed.get("AccountName", "").split("\\")[-1]) if ed.get("AccountName") else None,
+                domain=self._clean(ed.get("AccountName", "").split("\\")[0] if ed.get("AccountName") and "\\" in ed.get("AccountName", "") else None),
             ),
             winlog=WinLogsFields(
                 channel="System",

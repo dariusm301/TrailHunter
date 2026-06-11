@@ -1,7 +1,8 @@
 from __future__ import annotations
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 import uuid
 
@@ -54,16 +55,34 @@ class RuleMeta(BaseModel):
     kill_chain_phase: Optional[KillChainPhase] = None
     tags:             list[str] = []         # ex: ["persistence", "evasion"]
 
+@dataclass(frozen=True)
+class Capability:
+    name: str
+    bind: tuple[str, ...] = ()
+    values: tuple[str | None, ...] = ()
+
+    @field_validator("values", "bind", mode="before")
+    @classmethod
+    def _to_tuple(cls, v):
+        if isinstance(v, list):
+            return tuple(v)
+        return v
+
+
 
 class DetectionFinding(BaseModel):
     id:        str      = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime | None = Field(default_factory=None)
 
     # Metadata
     rule_id:          str
     rule_name:        str
+    rule_type:        str # "agregate" | "per_event"
+    requires:         list[Capability]         = []
+    provides:         list[Capability]         = []  
+    fusion_key:       tuple | None = None              
     severity:         Severity
-    confidence:       float             # 0.0 – 1.0
+    confidence:       float             
     technique_id:     Optional[str]     = None
     technique_name:   Optional[str]     = None
     tactic:           Optional[MitreTactic]      = None
@@ -74,11 +93,12 @@ class DetectionFinding(BaseModel):
     source:      str                    # "windows_events" | "web_logs" | "processes" | "registry"
     description: str                    # Description of the finding, with context from the rule
 
-    triggered_by: list[int] = []        # index in NormalizedEvent list
+    triggered_by: list[str] = []        # index in NormalizedEvent list
     event_count:  int = 1               
 
     # Additional context
     extra: dict[str, Any] = {}
+    entities: dict[str, Any] = {}
 
 
 

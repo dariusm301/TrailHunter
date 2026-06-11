@@ -1,18 +1,21 @@
 
 from __future__ import annotations
+from importlib.metadata import requires
+from importlib.metadata import requires
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional
 
+from detection.rules.security import _extract_command
 from models.events import NormalizedEvent
 from detection.engine import PerEventRule, AggregateRule
 from detection.models import (
     DetectionFinding, Severity,
     MitreTactic, KillChainPhase,
+    Capability
 )
 
-MAX_INDICES = 20
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -54,6 +57,17 @@ def _dst_ip(event: NormalizedEvent) -> Optional[str]:
 def _registry_path(event: NormalizedEvent) -> str:
     return (event.registry.path or "").lower() if event.registry else ""
 
+def _host(event: NormalizedEvent) -> Optional[str]:
+    if event.host and event.host.name:
+        return event.host.name
+    if event.winlog and event.winlog.computer_name:
+        return event.winlog.computer_name
+    return None
+
+def _logon_id(event: NormalizedEvent) -> Optional[str]:
+    if event.logon and event.logon.id:
+        return event.logon.id
+    return None
 
 # ─────────────────────────────────────────────
 # Patterns
@@ -116,6 +130,21 @@ _EXECUTABLE_EXTENSIONS = re.compile(
     re.IGNORECASE
 )
 
+_BENIGN_FILE_PROCESSES = re.compile(
+    r"^(dismhost\.exe|tiworker\.exe|mscorsvw\.exe|taskhostw\.exe"
+    r"|sdiagnhost\.exe|msiexec\.exe|trustedinstaller\.exe)$",
+    re.IGNORECASE
+)
+
+_BENIGN_FILE_PATHS = re.compile(
+    r"(\\\$winreagent\\"
+    r"|\\winsxs\\temp\\"
+    r"|\\assembly\\nativeimages_"
+    r"|\\temp\\sdiag_"
+    r"|__psscriptpolicytest_)",
+    re.IGNORECASE
+)
+
 
 # ═════════════════════════════════════════════
 # PER-EVENT RULES
@@ -125,7 +154,7 @@ class SysmonWebshellProcessRule(PerEventRule):
     """Event 1 — process spawned by web server."""
     rule_id = "SYS_WEBSHELL_PROCESS_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _event_id(event) != 1:
             return None
 
@@ -140,6 +169,11 @@ class SysmonWebshellProcessRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Webshell Process Execution (Sysmon)",
+            rule_type="per_event",
+            requires=[Capability("code_execution", bind=("command",),
+                     values=(_extract_command(event),))],
+            provides=[],
+            fusion_key=("sysmon_process", event.id),
             severity=Severity.CRITICAL,
             confidence=0.97,
             technique_id="T1505.003",
@@ -149,24 +183,27 @@ class SysmonWebshellProcessRule(PerEventRule):
             tags=["webshell", "execution", "sysmon"],
             source="sysmon",
             description=f"'{child}' spawned by '{parent}' — webshell execution",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "parent": parent,
                 "child": child,
                 "command_line": _cmdline(event),
                 "hash_sha256": event.process.hash_sha256 if event.process else None,
                 "pid": event.process.pid if event.process else None,
-            }
+            },
+            entities={"host": _host(event)},
         )
 
+_REMOTE_PARENTS = ["sshd.exe"]
 
 class SysmonSuspiciousCmdlineRule(PerEventRule):
     """Event 1 — suspect command line."""
     rule_id = "SYS_SUSPICIOUS_CMDLINE_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
-        if _event_id(event) != 1:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        event_id = _event_id(event)
+        if event_id != 1:
             return None
 
         cmdline = _cmdline(event)
@@ -175,10 +212,20 @@ class SysmonSuspiciousCmdlineRule(PerEventRule):
 
         if _WEB_SERVER_PROCESSES.match(_parent_name(event)):
             return None
+        
+        logon_id = _logon_id(event)
+        parent = _parent_name(event)
+        requires = []
+        if logon_id and parent in _REMOTE_PARENTS:
+            requires.extend([Capability("session_established", bind=("logon_id",), values=(logon_id,))])
 
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Command Line (Sysmon)",
+            rule_type="per_event", 
+            requires=requires,
+            provides=(),
+            fusion_key=("sysmon_process", event.id),
             severity=Severity.HIGH,
             confidence=0.85,
             technique_id="T1059",
@@ -188,14 +235,15 @@ class SysmonSuspiciousCmdlineRule(PerEventRule):
             tags=["cmdline", "execution", "sysmon"],
             source="sysmon",
             description=f"Suspicious command: '{cmdline[:120]}'",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "command_line": cmdline,
                 "process": _process_name(event),
                 "parent": _parent_name(event),
                 "hash_sha256": event.process.hash_sha256 if event.process else None,
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 _LSASS_WHITELIST = {
@@ -210,7 +258,11 @@ _LSASS_WHITELIST = {
     "msmpeng.exe",        # Windows Defender
     "taskmgr.exe",
     "wmiprvse.exe",
+    "microsoftedgeupdate.exe",
+    "googleupdate.exe",
 }
+
+_SAFE_READONLY_ACCESS = {"0x1000", "0x400"} 
 
 class LsassAccessRule(PerEventRule):
     """Event 10 — LSASS access = credential dumping."""
@@ -221,14 +273,14 @@ class LsassAccessRule(PerEventRule):
         "0x1438", "0x1418", "0x1038"
     }
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _event_id(event) != 10:
             return None
 
         target_exe = _target_executable(event)
         if "lsass.exe" not in target_exe:
             return None
-        
+
         process = _process_name(event)
         if process in _LSASS_WHITELIST:
             return None
@@ -237,11 +289,16 @@ class LsassAccessRule(PerEventRule):
         if event.winlog and event.winlog.extra:
             granted_access = (event.winlog.extra.get("granted_access") or "").lower()
 
+        if granted_access in _SAFE_READONLY_ACCESS:
+            return None
         confidence = 0.97 if granted_access in self._DANGEROUS_ACCESS else 0.85
 
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="LSASS Memory Access",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
             severity=Severity.CRITICAL,
             confidence=confidence,
             technique_id="T1003.001",
@@ -251,8 +308,8 @@ class LsassAccessRule(PerEventRule):
             tags=["credential_dumping", "lsass", "sysmon"],
             source="sysmon",
             description=f"'{_process_name(event)}' accessed LSASS with mask '{granted_access}'",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "source_process": _process_name(event),
                 "source_pid": event.process.pid if event.process else None,
@@ -260,7 +317,8 @@ class LsassAccessRule(PerEventRule):
                 "call_trace": (
                     event.winlog.extra.get("call_trace") if event.winlog and event.winlog.extra else None
                 ),
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 
@@ -268,7 +326,7 @@ class SuspiciousNetworkConnectionRule(PerEventRule):
     """Event 3 — outbound connection from a suspicious process or on a suspicious port."""
     rule_id = "SYS_SUSPICIOUS_NETWORK_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _event_id(event) != 3:
             return None
 
@@ -298,6 +356,9 @@ class SuspiciousNetworkConnectionRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Network Connection",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
             severity=severity,
             confidence=confidence,
             technique_id="T1071.001",
@@ -307,15 +368,16 @@ class SuspiciousNetworkConnectionRule(PerEventRule):
             tags=["network", "c2", "sysmon"],
             source="sysmon",
             description=description,
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "process": process,
                 "dst_ip": dst_ip,
                 "dst_port": dst_port,
                 "suspicious_process": is_suspicious_process,
                 "suspicious_port": is_suspicious_port,
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 
@@ -323,7 +385,7 @@ class RunKeyPersistenceRule(PerEventRule):
     """Event 12/13 — writing to Run keys = persistence."""
     rule_id = "SYS_RUNKEY_PERSISTENCE_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _event_id(event) not in (12, 13):
             return None
 
@@ -336,6 +398,8 @@ class RunKeyPersistenceRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Registry Run Key Modification",
+            requires=[],
+            provides=[],
             severity=Severity.HIGH,
             confidence=0.92,
             technique_id="T1547.001",
@@ -345,13 +409,14 @@ class RunKeyPersistenceRule(PerEventRule):
             tags=["persistence", "registry", "sysmon"],
             source="sysmon",
             description=f"Run key modified: '{reg_path}'",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "registry_path": reg_path,
                 "value": value,
                 "process": _process_name(event),
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 
@@ -359,7 +424,7 @@ class DefenderExclusionRule(PerEventRule):
     """Event 1/13 — excludere din Defender = defense evasion."""
     rule_id = "SYS_DEFENDER_EXCLUSION_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         eid = _event_id(event)
 
         if eid == 1:
@@ -375,6 +440,9 @@ class DefenderExclusionRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Windows Defender Exclusion Added",
+            requires=(),
+            provides=(),
+            fusion_key=(),
             severity=Severity.CRITICAL,
             confidence=0.95,
             technique_id="T1562.001",
@@ -384,13 +452,14 @@ class DefenderExclusionRule(PerEventRule):
             tags=["defense_evasion", "defender", "sysmon"],
             source="sysmon",
             description=f"Defender exclusion added by '{_process_name(event)}'",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "process": _process_name(event),
                 "command_line": _cmdline(event) if eid == 1 else None,
                 "registry_path": _registry_path(event) if eid == 13 else None,
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 
@@ -398,12 +467,19 @@ class SuspiciousFileDropRule(PerEventRule):
     """Event 11 — executable created in suspicious location."""
     rule_id = "SYS_SUSPICIOUS_FILE_DROP_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _event_id(event) != 11:
             return None
 
         file_path = (event.file.path or "").lower() if event.file else ""
         if not file_path:
+            return None
+
+        # Early exit pentru FP cunoscute
+        process = _process_name(event)
+        if _BENIGN_FILE_PROCESSES.match(process):
+            return None
+        if _BENIGN_FILE_PATHS.search(file_path):
             return None
 
         in_suspicious_path = bool(_SUSPICIOUS_FILE_PATHS.search(file_path))
@@ -415,6 +491,9 @@ class SuspiciousFileDropRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Executable Dropped in Suspicious Location",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
             severity=Severity.HIGH,
             confidence=0.88,
             technique_id="T1105",
@@ -424,12 +503,13 @@ class SuspiciousFileDropRule(PerEventRule):
             tags=["file_drop", "executable", "sysmon"],
             source="sysmon",
             description=f"Executable created in suspicious location: '{file_path}'",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "file_path": file_path,
                 "process": _process_name(event),
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 
@@ -437,7 +517,7 @@ class SuspiciousPipeRule(PerEventRule):
     """Event 17/18 — suspect named pipe = C2 framework."""
     rule_id = "SYS_SUSPICIOUS_PIPE_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _event_id(event) not in (17, 18):
             return None
 
@@ -452,6 +532,8 @@ class SuspiciousPipeRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Named Pipe",
+            requires=[],
+            provides=[],
             severity=Severity.CRITICAL,
             confidence=0.93,
             technique_id="T1559.001",
@@ -461,13 +543,14 @@ class SuspiciousPipeRule(PerEventRule):
             tags=["c2", "pipe", "sysmon"],
             source="sysmon",
             description=f"Suspicious named pipe detected: '{pipe_name}'",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "pipe_name": pipe_name,
                 "process": _process_name(event),
                 "event_type": "created" if _event_id(event) == 17 else "connected",
-            }
+            },
+            entities={"host": _host(event)},
         )
 
 

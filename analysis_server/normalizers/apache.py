@@ -1,6 +1,6 @@
 from normalizers.base import BaseNormalizer
 from models.events import *
-from datetime import datetime
+from datetime import datetime, timezone
 
 class ApacheNormalizer(BaseNormalizer):
     
@@ -17,14 +17,16 @@ class ApacheNormalizer(BaseNormalizer):
               "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
             }
         """
+        ts = datetime.strptime(raw.get("timestamp"), "%d/%b/%Y:%H:%M:%S %z").astimezone(timezone.utc)
         return NormalizedEvent(
+            timestamp = ts,
             event=EventFields(
                 action="apache_access_log",
                 category="web",
                 dataset="apache.access",
                 module="apache",
                 original=str(raw).encode("utf-8"),
-                created= datetime.strptime(raw.get("timestamp"), "%d/%b/%Y:%H:%M:%S %z")
+                created=ts
             ),
             network=NetworkFields(
                 protocol="http",
@@ -56,14 +58,16 @@ class ApacheNormalizer(BaseNormalizer):
         }
         """
         address, port = self._parse_host_port(raw.get("client"))
+        ts = datetime.strptime(raw.get("timestamp"), "%a %b %d %H:%M:%S.%f %Y").replace(tzinfo=timezone.utc)
         return NormalizedEvent(
+            timestamp=ts,
             event=EventFields(
                 action="apache_error_log",
                 category="web",
                 dataset="apache.error",
                 module="apache",
                 original=str(raw).encode("utf-8"),
-                created= datetime.strptime(raw.get("timestamp"), "%a %b %d %H:%M:%S.%f %Y"),
+                created= ts,
                 severity_label=raw.get("level"),
                 reason=raw.get("message")
             ),

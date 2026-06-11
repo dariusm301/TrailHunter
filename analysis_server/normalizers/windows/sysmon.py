@@ -8,7 +8,33 @@ class SysmonNormalizer(BaseNormalizer):
         parser = getattr(self, f"_parse_{event_id}", None)
         if not parser:
             return None
-        return parser(raw)
+        event = parser(raw)
+        if event and not event.host:
+            hostname = self._extract_hostname(raw)
+            if hostname:
+                event.host = HostFields(name=hostname)
+        return event
+
+    
+    def _extract_hostname(self, raw: dict) -> Optional[str]:
+        """Extract hostname from user fields like 'winmachine\\admin'."""
+        ed = raw.get("event_data", {})
+        for field in ("SourceUser", "TargetUser", "User"):
+            value = ed.get(field, "")
+            if "\\" in value:
+                domain = value.split("\\")[0]
+                if domain.upper() not in ("NT AUTHORITY", "BUILTIN", "NT SERVICE", ""):
+                    return domain
+        return None
+    
+    def _normalize_logon_id(self, value: str | None) -> str | None:
+        cleaned = self._clean(value)
+        if not cleaned:
+            return None
+        try:
+            return f"0x{int(cleaned, 16):x}"  
+        except (ValueError, TypeError):
+            return None
 
     # ─────────────────────────────────────────────
     # Event 1 — Process Create
@@ -55,6 +81,9 @@ class SysmonNormalizer(BaseNormalizer):
                 channel="Microsoft-Windows-Sysmon/Operational",
                 event_id=1,
                 provider_name="Microsoft-Windows-Sysmon",
+            ),
+            logon=LogonFields(
+                id=self._normalize_logon_id(ed.get("LogonId")),
             ),
         )
 
@@ -253,7 +282,6 @@ class SysmonNormalizer(BaseNormalizer):
                 domain=self._clean(ed.get("SourceUser", "").split("\\")[0] if "\\" in ed.get("SourceUser", "") else None),
             ),
             process=ProcessFields(
-                # source = procesul care face accesul
                 pid=int(ed.get("SourceProcessId")) if self._clean(ed.get("SourceProcessId")) else None,
                 executable=ed.get("SourceImage"),
                 name=ed.get("SourceImage", "").split("\\")[-1] or None,
@@ -357,7 +385,7 @@ class SysmonNormalizer(BaseNormalizer):
             ),
             registry=RegistryFields(
                 path=ed.get("TargetObject"),
-                value=ed.get("Details"),        # prezent la event 13
+                value=ed.get("Details"),      
                 event_type=ed.get("EventType"),
             ),
             winlog=WinLogsFields(
@@ -444,7 +472,6 @@ class SysmonNormalizer(BaseNormalizer):
         ed = raw.get("event_data", {})
         pipe_name = ed.get("PipeName", "").lower()
 
-        # Named pipes cunoscute ca malițioase (C2 frameworks)
         SUSPICIOUS_PIPES = {
             "\\postex_",        # Cobalt Strike post-ex
             "\\msagent_",       # Cobalt Strike

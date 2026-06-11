@@ -15,7 +15,7 @@ class PerEventRule(ABC):
     def rule_id(self) -> str: ...
 
     @abstractmethod
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]: ...
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]: ...
 
 
 class AggregateRule(ABC):
@@ -46,22 +46,21 @@ class DetectionEngine:
         elif isinstance(rule, AggregateRule):
             self._aggregate.append(rule)
 
-    def analyze(
-        self,
-        events: list[NormalizedEvent],
-        collection_id: str,
-        source: str,
-    ) -> DetectionReport:
+    def analyze(self, events, collection_id, source) -> DetectionReport:
         findings: list[DetectionFinding] = []
 
-        for i, event in enumerate(events):
+        seen_event_rule: set[tuple[str, str]] = set()
+        for event in events:
             for rule in self._per_event:
                 try:
-                    finding = rule.match(event, index=i)
+                    finding = rule.match(event)
                     if finding:
-                        findings.append(finding)
+                        key = (event.id, rule.rule_id)
+                        if key not in seen_event_rule:
+                            seen_event_rule.add(key)
+                            findings.append(finding)
                 except Exception as e:
-                    logger.warning(f"[{rule.rule_id}] event error {i}: {e}")
+                    logger.warning(f"[{rule.rule_id}] event error: {e}")
 
         for rule in self._aggregate:
             try:

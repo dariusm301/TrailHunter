@@ -187,11 +187,15 @@ def process_collection(storage: CollectionStorage):
                     print(f"Failed to normalize Apache log event: {event}")
         storage.save_channel('web_logs', apache_logs_normalized)
 
+    summary = storage.load_summary()
+    print(summary)
+
     storage.save_summary(
         {
             "hostname": hostname,
             "collected_at": collected_at,
             "os_version": os_version,
+            "collector_ip": summary.get("collector_ip", {}),
             "event_counts": {
                 "wmi": len(wmi_events_normalized),
                 "security": len(security_events_normalized),
@@ -206,8 +210,6 @@ def process_collection(storage: CollectionStorage):
                 "web_logs": len(apache_logs_normalized)
             },
             "hashes": 
-                payload.get('module_hashes', {})
-            
-            
+                payload.get('module_hashes', {}),           
         }
     )

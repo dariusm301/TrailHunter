@@ -5,7 +5,7 @@ from pathlib import Path
 from services.validator import compute_hash
 from datetime import datetime, timezone
 from models.events import NormalizedEvent
-from detection.models import DetectionReport
+from detection.models import DetectionReport, DetectionFinding
 
 
 COLLECTIONS_ROOT = Path("collections")
@@ -74,27 +74,39 @@ class CollectionStorage:
     def save_channel(self, channel: str, events: list[NormalizedEvent]):
         """Save the normalized events for a specific channel."""
         path = self.processed_path / f"{channel}.json"
-        path.write_text(json.dumps([e.model_dump(mode="json") for e in events], indent=2))
+        events_dict = {event.id: event for event in events}
+        path.write_text(json.dumps(
+            {eid: e.model_dump(mode="json") for eid, e in events_dict.items()},
+            indent=2,
+        ))
+        return events_dict
 
-    def load_channel(self, channel: str) -> list[NormalizedEvent]:
+    def load_channel(self, channel: str) -> dict[str, NormalizedEvent]:
+        """Load normalized events for a channel, indexed by event ID."""
         path = self.processed_path / f"{channel}.json"
         if not path.exists():
-            return []
-        return [NormalizedEvent(**e) for e in json.loads(path.read_text(encoding="utf-8"))]
+            return {}
+        
+        raw = json.loads(path.read_text())
+        return {eid: NormalizedEvent.model_validate(e) for eid, e in raw.items()}
+    
+    def load_all_channels(self) -> dict[str, NormalizedEvent]:
+        """Load all normalized channels for this collection."""
+        all_events = {}
+        for channel_file in self.processed_path.glob("*.json"):
+            all_events.update(self.load_channel(channel_file.stem))
+        return all_events
 
     def save_summary(self, summary: dict):
         path = self.base_path / "summary.json"
         path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
     def load_summary(self) -> dict:
-        path = self.processed_path / "summary.json"
+        path = self.base_path / "summary.json"
         if not path.exists():
             return {}
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def save_report(self, channel :str, report: DetectionReport):
-        path = self.reports_path / f"{channel}.json"
-        path.write_text(json.dumps(report.model_dump(), indent=2, default=str), encoding="utf-8")
 
     def available_channels(self) -> list[str]:
         """Return the list of available normalized channels for this collection."""
@@ -104,3 +116,35 @@ class CollectionStorage:
 
     def __repr__(self):
         return f"<CollectionStorage {self.hostname}/{self.timestamp}>"
+    
+    # -------------------------
+    # REPORTS
+    # -------------------------
+
+    def save_report(self, channel :str, report: DetectionReport):
+        path = self.reports_path / f"{channel}.json"
+        path.write_text(json.dumps(report.model_dump(), indent=2, default=str), encoding="utf-8")
+
+
+    def load_report(self, channel: str) -> DetectionReport:
+        path = self.reports_path / f"{channel}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"Report not found for channel: {channel}")
+        report_data = json.loads(path.read_text(encoding="utf-8"))
+        return DetectionReport(**report_data)
+    
+
+    def load_all_reports(self) -> list[DetectionReport]:
+        """Load all detection reports for this collection."""
+        reports = []
+        for report_file in self.reports_path.glob("*.json"):
+            channel_name = report_file.stem
+            reports.append(self.load_report(channel_name))
+        return reports
+    
+    def load_all_findings(self) -> list[DetectionFinding]:
+        """Load all findings from all reports for this collection."""
+        findings = []
+        for report in self.load_all_reports():
+            findings.extend(report.findings)
+        return findings

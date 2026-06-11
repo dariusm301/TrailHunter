@@ -25,3 +25,6 @@ class CollectionPayload(BaseModel):
     metadata: Metadata
     modules: Modules
     module_hashes: ModuleHashes
+
+class CollectionSummary(BaseModel):
+    collector_ip: dict[str, list[str]]

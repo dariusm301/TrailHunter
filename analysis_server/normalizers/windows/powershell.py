@@ -23,7 +23,7 @@ class PowerShellNormalizer(BaseNormalizer):
 
         return NormalizedEvent(
             event=EventFields(
-                action="powershell_script_block",
+                action="scriptblock-logged",
                 category="process",
                 type="info",
                 code="4104",
@@ -77,4 +77,61 @@ class PowerShellNormalizer(BaseNormalizer):
                     "payload": ed.get("Payload"),
                 },
             ),
+        )
+    
+
+    # ─────────────────────────────────────────────
+    # Event 4105 — ScriptBlock invocation started
+    # ─────────────────────────────────────────────
+    def _parse_4105(self, raw: dict) -> NormalizedEvent:
+        """ScriptBlock invocation started"""
+        ed = raw.get("event_data", {})
+        return NormalizedEvent(
+            event=EventFields(
+                kind="event",
+                category="process",
+                type="start",
+                action="scriptblock-started",
+                provider="Microsoft-Windows-PowerShell",
+            ),
+            host=HostFields(hostname=raw.get("hostname", "")),
+            winlog=WinLogsFields(
+                channel="Microsoft-Windows-PowerShell/Operational",
+                event_id=4105,
+                record_id=raw.get("record_id"),
+            ),
+            powershell=PowerShellFields(
+                script_block_id=ed.get("ScriptBlockId"),
+                runspace_id=ed.get("RunspaceId"),
+            ),
+            message=raw.get("message", ""),
+            timestamp=raw.get("time_created"),
+        )
+
+    # ─────────────────────────────────────────────
+    # Event 4106 — ScriptBlock invocation completed
+    # ─────────────────────────────────────────────
+    def _parse_4106(self, raw: dict) -> NormalizedEvent:
+        """ScriptBlock invocation completed"""
+        ed = raw.get("event_data", {})
+        return NormalizedEvent(
+            event=EventFields(
+                kind="event",
+                category="process",
+                type=["end"],
+                action="scriptblock-completed",
+                provider="Microsoft-Windows-PowerShell",
+            ),
+            host=HostFields(hostname=raw.get("hostname", "")),
+            winlog=WinLogsFields(
+                channel="Microsoft-Windows-PowerShell/Operational",
+                event_id=4106,
+                record_id=raw.get("record_id"),
+            ),
+            powershell=PowerShellFields(
+                script_block_id=ed.get("ScriptBlockId"),
+                runspace_id=ed.get("RunspaceId"),
+            ),
+            message=raw.get("message", ""),
+            timestamp=raw.get("time_created")
         )

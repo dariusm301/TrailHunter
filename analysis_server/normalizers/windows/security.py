@@ -53,7 +53,7 @@ class SecurityNormalizer(BaseNormalizer):
         """
         ed = raw.get('event_data', {})
         return NormalizedEvent(
-            
+            timestamp=self._parse_time(raw.get('time_created')),
             event=EventFields(
                 action="account_logged_on",
                 category="authentication",
@@ -84,7 +84,14 @@ class SecurityNormalizer(BaseNormalizer):
             winlog=WinLogsFields(
                 channel="Security",
                 event_id=raw.get('event_id'),
-                provider_name="Microsoft-Windows-Security-Auditing", 
+                provider_name="Microsoft-Windows-Security-Auditing",
+                extra={
+                    "logon_type": ed.get('LogonType'),
+                } 
+            ),
+            logon=LogonFields(
+                id=self._clean(ed.get('TargetLogonId')) if self._clean(ed.get('TargetLogonId')) else None,
+                type=raw.get('LogonType')
             )
         )
 
@@ -124,7 +131,7 @@ class SecurityNormalizer(BaseNormalizer):
         """
         ed = raw.get('event_data', {})
         return NormalizedEvent(
-            
+            timestamp=self._parse_time(raw.get('time_created')),
             event=EventFields(
                 action="process_created",
                 category="process",
@@ -187,6 +194,7 @@ class SecurityNormalizer(BaseNormalizer):
         process_args = task_details["arguments"].split() if task_details["arguments"] else None
 
         return NormalizedEvent(
+            timestamp=self._parse_time(raw.get('time_created')),
             event=EventFields(
                 action="scheduled_task_updated",
                 category="persistence", 
@@ -248,7 +256,7 @@ class SecurityNormalizer(BaseNormalizer):
         task_name = self._clean(ed.get('TaskName'))
         
         task_details = _extract_task_details(ed.get('TaskContent'))
-        executable = task_details["command"] or task_details["com_class"]
+        executable = task_details["command"]
         process_args = task_details["arguments"].split() if task_details["arguments"] else None
 
         is_system_path = task_name and any(
@@ -257,7 +265,12 @@ class SecurityNormalizer(BaseNormalizer):
             ]
         )
         uses_com_handler = task_details["com_class"] is not None
-        is_hidden = task_details.get("hidden", False)
+        
+        full_command = executable
+        if process_args:
+            full_command = f"{executable} {' '.join(process_args)}"
+
+        is_hidden = True if full_command and "windowstyle hidden" in full_command.lower() else False
 
         if uses_com_handler and not is_system_path:
             severity = 4  
@@ -267,6 +280,7 @@ class SecurityNormalizer(BaseNormalizer):
             severity = 1 
 
         return NormalizedEvent(
+            timestamp=self._parse_time(raw.get('time_created')),
             event=EventFields(
                 action="scheduled_task_created",
                 category="persistence",
@@ -290,7 +304,7 @@ class SecurityNormalizer(BaseNormalizer):
                 pid=int(ed.get('ClientProcessId')) if self._clean(ed.get('ClientProcessId', '')) else None,
                 executable=executable,
                 args=process_args,
-                command_line=task_name,
+                command_line=full_command,
                 parent=ProcessFields(
                     pid=int(ed.get('ParentProcessId')) if self._clean(ed.get('ParentProcessId', '')) else None
                 )
@@ -304,6 +318,7 @@ class SecurityNormalizer(BaseNormalizer):
                     "uses_com_handler": uses_com_handler,
                     "com_class": task_details["com_class"],
                     "is_hidden": is_hidden,
+                    "command": full_command
                 }
             )
         )
@@ -347,6 +362,7 @@ class SecurityNormalizer(BaseNormalizer):
         """
         ed = raw.get('event_data', {})
         return NormalizedEvent(
+            timestamp=self._parse_time(raw.get('time_created')),
             event=EventFields(
                 action="user_account_created",
                 category="iam",
@@ -354,12 +370,11 @@ class SecurityNormalizer(BaseNormalizer):
                 created=self._parse_time(raw.get('time_created')),
                 dataset="windows_security",
                 module="windows",
-                severity=3,  # account creation e întotdeauna notabil
+                severity=3,  
                 original=raw.get('message', '').encode('utf-8'),
                 provider="Microsoft-Windows-Security-Auditing",
             ),
             user=UserFields(
-                # target = contul nou creat, mai relevant decât subiectul
                 name=self._clean(ed.get('TargetUserName')),
                 domain=self._clean(ed.get('TargetDomainName')),
                 id=self._clean(ed.get('TargetSid'))
@@ -398,6 +413,7 @@ class SecurityNormalizer(BaseNormalizer):
         is_admin_group = group_name and group_name.lower() == "administrators"
 
         return NormalizedEvent(
+            timestamp=self._parse_time(raw.get('time_created')),
             event=EventFields(
                 action="user_added_to_group",
                 category="iam",

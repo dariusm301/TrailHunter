@@ -18,7 +18,7 @@ from detection.models import (
 # ─────────────────────────────────────────────
 
 def _ts(event: NormalizedEvent) -> datetime:
-    return event.timestamp or datetime.now(timezone.utc)
+    return event.timestamp or None
 
 def _process_name(event: NormalizedEvent) -> str:
     return (event.process.name or "").lower() if event.process else ""
@@ -83,7 +83,7 @@ class SuspiciousProcessSnapshotRule(PerEventRule):
     """Suspicious process found active in snapshot."""
     rule_id = "PROC_SUSPICIOUS_ACTIVE_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) != "process_snapshot":
             return None
 
@@ -103,6 +103,7 @@ class SuspiciousProcessSnapshotRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Suspicious Process Active in Snapshot",
+            rule_type="per_event",
             severity=severity,
             confidence=confidence,
             technique_id="T1059",
@@ -113,7 +114,7 @@ class SuspiciousProcessSnapshotRule(PerEventRule):
             source="processes",
             description=f"Suspicious process '{process}' active at collection time",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "process": process,
                 "pid": _pid(event),
@@ -128,7 +129,7 @@ class SystemProcessWrongOwnerRule(PerEventRule):
     """System process running as non-SYSTEM user = process hollowing indicator."""
     rule_id = "PROC_WRONG_OWNER_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if _action(event) != "process_snapshot":
             return None
 
@@ -143,6 +144,7 @@ class SystemProcessWrongOwnerRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="System Process Running as Wrong User",
+            rule_type="per_event",
             severity=Severity.CRITICAL,
             confidence=0.95,
             technique_id="T1055",
@@ -153,7 +155,7 @@ class SystemProcessWrongOwnerRule(PerEventRule):
             source="processes",
             description=f"'{process}' running as '{_username(event)}' — expected SYSTEM",
             timestamp=_ts(event),
-            triggered_by=[index],
+            triggered_by=[event.id],
             extra={
                 "process": process,
                 "pid": _pid(event),
@@ -161,21 +163,6 @@ class SystemProcessWrongOwnerRule(PerEventRule):
             }
         )
 
-
-class WebServerChildProcessRule(PerEventRule):
-    """Suspicious process with parent PID matching a web server — webshell indicator."""
-    rule_id = "PROC_WEBSHELL_CHILD_001"
-
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
-        if _action(event) != "process_snapshot":
-            return None
-
-        process = _process_name(event)
-        if not _SUSPICIOUS_PROCESSES.match(process):
-            return None
-
-        # Needs parent PID to correlate — handled in aggregate
-        return None
 
 
 # ═════════════════════════════════════════════
@@ -215,6 +202,7 @@ class WebshellChildProcessAggregateRule(AggregateRule):
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="Webshell Child Process Detected in Snapshot",
+                rule_type="aggregate",
                 severity=Severity.CRITICAL,
                 confidence=0.95,
                 technique_id="T1505.003",
@@ -225,7 +213,7 @@ class WebshellChildProcessAggregateRule(AggregateRule):
                 source="processes",
                 description=f"'{process}' (PID {_pid(e)}) is child of web server '{parent_name}' (PID {parent_pid})",
                 timestamp=_ts(e),
-                triggered_by=[i],
+                triggered_by=[e.id],
                 extra={
                     "child_process": process,
                     "child_pid": _pid(e),
@@ -256,6 +244,7 @@ class SuspiciousCmdlineSnapshotRule(AggregateRule):
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="Suspicious Command Line in Process Snapshot",
+                rule_type="aggregate",
                 severity=Severity.HIGH,
                 confidence=0.88,
                 technique_id="T1059.001",
@@ -266,7 +255,7 @@ class SuspiciousCmdlineSnapshotRule(AggregateRule):
                 source="processes",
                 description=f"Active process with suspicious cmdline: '{cmdline[:120]}'",
                 timestamp=_ts(e),
-                triggered_by=[i],
+                triggered_by=[e.id],
                 extra={
                     "process": _process_name(e),
                     "pid": _pid(e),

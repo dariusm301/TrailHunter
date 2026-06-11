@@ -1,18 +1,21 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from config import COLLECTOR_DIR
+from pathlib import Path
 
 router = APIRouter()
 
 @router.get("/{platform}/{filename}")
-async def server_module(platform: str, filename: str):
+async def serve_module(platform: str, filename: str):
+    base = COLLECTOR_DIR
     if "collector" in filename:
-        script_path = COLLECTOR_DIR / filename
+        script_path = base / filename
     else:
-        script_path = COLLECTOR_DIR / "modules" / platform / filename
+        script_path = base / "modules" / platform / filename
 
     if not script_path.exists():
         raise HTTPException(status_code=404, detail="Script not found")
+    script_path = script_path.resolve()
     
     return PlainTextResponse(script_path.read_text())
     

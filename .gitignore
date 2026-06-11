@@ -21,8 +21,11 @@ analysis-server/data/
 teste
 *.json
 get*
-test*
+*test*
 *.xml
 
 *.zip 
 collections/
+
+graph.html
+lib

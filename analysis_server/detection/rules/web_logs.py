@@ -1,15 +1,19 @@
 from __future__ import annotations
+from importlib.resources import path
 import re
+import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
 from models.events import NormalizedEvent
 from detection.engine import PerEventRule, AggregateRule
 from detection.models import (
-    DetectionFinding, Severity,
+    Capability, DetectionFinding, Severity,
     MitreTactic, KillChainPhase,
 )
+
 
 
 # ─────────────────────────────────────────────
@@ -51,10 +55,37 @@ def _ua(event: NormalizedEvent) -> str:
     return ""
 
 
-# ─────────────────────────────────────────────
-# PER-EVENT RULES
-# ─────────────────────────────────────────────
+def _file_name(event: NormalizedEvent) -> Optional[str]:
+    url = _url(event)
+    if not url:
+        return None
 
+    parsed = urlparse(url)
+
+    qs = parse_qs(parsed.query)
+    for param in ("page", "file", "path", "include", "load"):
+        values = qs.get(param, [])
+        if values:
+            candidate = values[0].rstrip("/").split("/")[-1]
+            if "." in candidate: 
+                return candidate
+
+    name = parsed.path.rstrip("/").split("/")[-1]
+    return name if (name and "." in name) else None
+
+def _cmd_from_url(url: str) -> Optional[str]:
+    """Extracts a potential command from the URL query parameters."""
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    for param in ("cmd", "exec", "command", "shell", "run", "system", "passthru", "eval"):
+        values = qs.get(param, [])
+        if values:
+            return values[0]
+    return None
+
+# ────────────────────────────────────────────
+# Patterns
+# ────────────────────────────────────────────
 
 _SQLI_PATTERNS = re.compile(
     r"(union\s+select|select\s+.+from|insert\s+into|drop\s+table"
@@ -63,76 +94,6 @@ _SQLI_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-class SqlInjectionRule(PerEventRule):
-    """Detects common SQL injection patterns in URLs."""
-
-    rule_id = "WEB_SQLI_001"
-
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
-        url = _url(event)
-        if not url or not _SQLI_PATTERNS.search(url):
-            return None
-
-        return DetectionFinding(
-            rule_id=self.rule_id,
-            rule_name="SQL Injection Attempt",
-            severity=Severity.HIGH,
-            confidence=0.85,
-            technique_id="T1190",
-            technique_name="Exploit Public-Facing Application",
-            tactic=MitreTactic.INITIAL_ACCESS,
-            kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["sqli", "web", "injection"],
-            source="web_logs",
-            description=f"SQL injection pattern detected in URL from {_ip(event)}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
-            extra={
-                "source_ip": _ip(event),
-                "url": url,
-                "status_code": _status(event),
-            }
-        )
-    
-
-_LFI_PATTERNS = re.compile(
-    r"(\.\./|\.\.\\|%2e%2e%2f|%252e%252e|/etc/passwd"
-    r"|/etc/shadow|/proc/self|boot\.ini|win\.ini"
-    r"|file://|php://|zip://|data://)",
-    re.IGNORECASE,
-)
-
-
-class PathTraversalRule(PerEventRule):
-    """Detects path traversal and local file inclusion attempts."""
-
-    rule_id = "WEB_LFI_001"
-
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
-        url = _url(event)
-        if not url or not _LFI_PATTERNS.search(url):
-            return None
-
-        return DetectionFinding(
-            rule_id=self.rule_id,
-            rule_name="Path Traversal / LFI Attempt",
-            severity=Severity.HIGH,
-            confidence=0.90,
-            technique_id="T1055",
-            technique_name="Path Traversal",
-            tactic=MitreTactic.INITIAL_ACCESS,
-            kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["lfi", "traversal", "web"],
-            source="web_logs",
-            description=f"Path traversal detected in URL from {_ip(event)}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
-            extra={
-                "source_ip": _ip(event),
-                "url": url,
-                "status_code": _status(event),
-            }
-        )
 
 
 _CMDI_PATTERNS = re.compile(
@@ -141,36 +102,12 @@ _CMDI_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-
-class CommandInjectionRule(PerEventRule):
-    """Detects command injection patterns in URLs."""
-    rule_id = "WEB_CMDI_001"
-
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
-        url = _url(event)
-        if not url or not _CMDI_PATTERNS.search(url):
-            return None
-
-        return DetectionFinding(
-            rule_id=self.rule_id,
-            rule_name="Command Injection Attempt",
-            severity=Severity.CRITICAL,
-            confidence=0.88,
-            technique_id="T1059",
-            technique_name="Command and Scripting Interpreter",
-            tactic=MitreTactic.EXECUTION,
-            kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["cmdi", "web", "rce"],
-            source="web_logs",
-            description=f"Command injection pattern detected from {_ip(event)}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
-            extra={
-                "source_ip": _ip(event),
-                "url": url,
-                "status_code": _status(event),
-            }
-        )
+_LFI_PATTERNS = re.compile(
+    r"(\.\./|\.\.\\|%2e%2e%2f|%252e%252e|/etc/passwd"
+    r"|/etc/shadow|/proc/self|boot\.ini|win\.ini"
+    r"|file://|php://|zip://|data://)",
+    re.IGNORECASE,
+)
 
 _XSS_PATTERNS = re.compile(
     r"(<script|javascript:|onerror\s*=|onload\s*=|alert\s*\("
@@ -178,35 +115,6 @@ _XSS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-class XssAttemptRule(PerEventRule):
-    """Detects common XSS patterns in URLs."""
-    rule_id = "WEB_XSS_001"
-
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
-        url = _url(event)
-        if not url or not _XSS_PATTERNS.search(url):
-            return None
-
-        return DetectionFinding(
-            rule_id=self.rule_id,
-            rule_name="XSS Attempt",
-            severity=Severity.MEDIUM,
-            confidence=0.80,
-            technique_id="T1189",
-            technique_name="Drive-by Compromise",
-            tactic=MitreTactic.INITIAL_ACCESS,
-            kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["xss", "web"],
-            source="web_logs",
-            description=f"XSS pattern detected in URL from {_ip(event)}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
-            extra={
-                "source_ip": _ip(event),
-                "url": url,
-                "status_code": _status(event),
-            }
-        )
 
 _WEBSHELL_UPLOAD_PATTERNS = re.compile(
     r"(shell|backdoor|cmd|exec|payload|inject|exploit)",
@@ -218,15 +126,199 @@ _WEBSHELL_EXTENSION_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
+_WEBSHELL_EXEC_PATTERNS = re.compile(
+    r"(cmd|exec|command|shell|run|system|passthru|eval)\s*=\s*"
+    r".*(whoami|net[\+%20]+(user|localgroup)|ipconfig|systeminfo"
+    r"|dir[\+%20]|ls[\+%20]|cat[\+%20]|id|uname|hostname"
+    r"|tasklist|netstat|wget|curl|powershell)",
+    re.IGNORECASE
+)
+
+
+_MALICIOUS_UPLOAD_PATTERNS = re.compile(
+    r"\.(exe|dll|bat|ps1|vbs|vbe|msi|bin|elf|sh|py|rb|pl)(\?|&|$|%)",
+    re.IGNORECASE
+)
+
+_SCANNER_UA_PATTERNS = re.compile(
+    r"(sqlmap|nikto|nmap|masscan|dirbuster|gobuster|wfuzz"
+    r"|burpsuite|hydra|medusa|nessus|openvas|nuclei|zgrab"
+    r"|python-requests|python-urllib|curl|wget|go-http-client)",
+    re.IGNORECASE,
+)
+
+
+_UPLOAD_ACCESS = re.compile(
+    r"/(upload|uploads|files|media|hackable)/.+\.(jpg|jpeg|png|gif|pdf)",
+    re.IGNORECASE
+)
+
+
+_UPLOAD_PATHS = re.compile(
+    r"/(upload|uploads|files|media|images|img|static|assets|tmp|temp)/",
+    re.IGNORECASE
+)
+# ─────────────────────────────────────────────
+# PER-EVENT RULES
+# ─────────────────────────────────────────────
+
+
+
+class SqlInjectionRule(PerEventRule):
+    """Detects common SQL injection patterns in URLs."""
+
+    rule_id = "WEB_SQLI_001"
+
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        url = _url(event)
+        if not url or not _SQLI_PATTERNS.search(url):
+            return None
+
+        return DetectionFinding(
+            rule_id=self.rule_id,
+            rule_name="SQL Injection Attempt",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
+            severity=Severity.HIGH,
+            confidence=0.85,
+            technique_id="T1190",
+            technique_name="Exploit Public-Facing Application",
+            tactic=MitreTactic.INITIAL_ACCESS,
+            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            tags=["sqli", "web", "injection"],
+            source="web_logs",
+            description=f"SQL injection pattern detected in URL from {_ip(event)}",
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
+            extra={
+                "source_ip": _ip(event),
+                "url": url,
+                "status_code": _status(event),
+            }
+        )
+    
+
+class PathTraversalRule(PerEventRule):
+    """Detects path traversal and local file inclusion attempts."""
+
+    rule_id = "WEB_LFI_001"
+
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        url = _url(event)
+        if not url or not _LFI_PATTERNS.search(url):
+            return None
+
+        return DetectionFinding(
+            rule_id=self.rule_id,
+            rule_name="Path Traversal / LFI Attempt",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
+            severity=Severity.HIGH,
+            confidence=0.90,
+            technique_id="T1055",
+            technique_name="Path Traversal",
+            tactic=MitreTactic.INITIAL_ACCESS,
+            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            tags=["lfi", "traversal", "web"],
+            source="web_logs",
+            description=f"Path traversal detected in URL from {_ip(event)}",
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
+            extra={
+                "source_ip": _ip(event),
+                "url": url,
+                "status_code": _status(event),
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event),
+            }
+        )
+
+
+class CommandInjectionRule(PerEventRule):
+    """Detects command injection patterns in URLs."""
+    rule_id = "WEB_CMDI_001"
+
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        url = _url(event)
+        if not url or not _CMDI_PATTERNS.search(url):
+            return None
+
+        return DetectionFinding(
+            rule_id=self.rule_id,
+            rule_name="Command Injection Attempt",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
+            severity=Severity.CRITICAL,
+            confidence=0.88,
+            technique_id="T1059",
+            technique_name="Command and Scripting Interpreter",
+            tactic=MitreTactic.EXECUTION,
+            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            tags=["cmdi", "web", "rce"],
+            source="web_logs",
+            description=f"Command injection pattern detected from {_ip(event)}",
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
+            extra={
+                "source_ip": _ip(event),
+                "url": url,
+                "status_code": _status(event),
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event),
+            }
+        )
+
+
+class XssAttemptRule(PerEventRule):
+    """Detects common XSS patterns in URLs."""
+    rule_id = "WEB_XSS_001"
+
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        url = _url(event)
+        if not url or not _XSS_PATTERNS.search(url):
+            return None
+
+        return DetectionFinding(
+            rule_id=self.rule_id,
+            rule_name="XSS Attempt",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
+            severity=Severity.MEDIUM,
+            confidence=0.80,
+            technique_id="T1189",
+            technique_name="Drive-by Compromise",
+            tactic=MitreTactic.INITIAL_ACCESS,
+            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            tags=["xss", "web"],
+            source="web_logs",
+            description=f"XSS pattern detected in URL from {_ip(event)}",
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
+            extra={
+                "source_ip": _ip(event),
+                "url": url,
+                "status_code": _status(event),
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event)
+            }
+        )
+
+
 class WebshellUploadRule(PerEventRule):
     """Detects potential webshell uploads based on URL patterns and HTTP method."""
     rule_id = "WEB_WEBSHELL_UPLOAD_001"
-    _UPLOAD_PATHS = re.compile(
-        r"/(upload|uploads|files|media|images|img|static|assets|tmp|temp)/",
-        re.IGNORECASE
-    )
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         url = _url(event)
         method = (event.http.request_method or "").upper() if event.http else ""
 
@@ -235,7 +327,7 @@ class WebshellUploadRule(PerEventRule):
 
         has_dangerous_ext = bool(_WEBSHELL_EXTENSION_PATTERNS.search(url))
         has_suspicious_name = bool(_WEBSHELL_UPLOAD_PATTERNS.search(url))
-        in_upload_dir = bool(self._UPLOAD_PATHS.search(url))
+        in_upload_dir = bool(_UPLOAD_PATHS.search(url))
 
         if has_dangerous_ext and in_upload_dir:
             confidence = 0.95
@@ -249,6 +341,9 @@ class WebshellUploadRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Webshell Upload Attempt",
+            rule_type="per_event",
+            requires=[],
+            provides=[Capability("webshell_dropped", bind=("source_ip", "file_name"), values=(_ip(event), _file_name(event)))],
             severity=Severity.CRITICAL,
             confidence=confidence,
             technique_id="T1505.003",
@@ -258,8 +353,8 @@ class WebshellUploadRule(PerEventRule):
             tags=["webshell", "upload", "web"],
             source="web_logs",
             description=f"Possible upload of webshell from {_ip(event)}: {url}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "source_ip": _ip(event),
                 "url": url,
@@ -269,23 +364,19 @@ class WebshellUploadRule(PerEventRule):
                     else "suspicious_name_with_ext" if has_suspicious_name and has_dangerous_ext
                     else "suspicious_name_in_upload_dir"
                 )
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event)
             }
         )
 
-
-
-_WEBSHELL_EXEC_PATTERNS = re.compile(
-    r"(cmd|exec|command|shell|run|system|passthru|eval)\s*=\s*"
-    r".*(whoami|net[\+%20]+user|ipconfig|systeminfo|dir[\+%20]|ls[\+%20]"
-    r"|cat[\+%20]|id|uname|hostname|tasklist|netstat|wget|curl|powershell)",
-    re.IGNORECASE
-)
 
 class WebshellExecutionRule(PerEventRule):
     """Detects potential webshell command execution based on URL patterns."""
     rule_id = "WEB_WEBSHELL_EXEC_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         url = _url(event)
         if not url or not _WEBSHELL_EXEC_PATTERNS.search(url):
             return None
@@ -293,6 +384,9 @@ class WebshellExecutionRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Webshell Command Execution",
+            rule_type="per_event",
+            requires=[Capability("webshell_dropped", bind=("source_ip", "file_name"), values=(_ip(event), _file_name(event)))],
+            provides=[Capability("code_execution", bind=("command",), values=(_cmd_from_url(url),)) if _cmd_from_url(url) else []],
             severity=Severity.CRITICAL,
             confidence=0.95,
             technique_id="T1505.003",
@@ -302,27 +396,25 @@ class WebshellExecutionRule(PerEventRule):
             tags=["webshell", "rce", "execution", "web"],
             source="web_logs",
             description=f"Execution of command via webshell from {_ip(event)}: {url}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "source_ip": _ip(event),
                 "url": url,
                 "status_code": _status(event),
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event),
+                "command": _cmd_from_url(url),
             }
         )
-
-
-
-_MALICIOUS_UPLOAD_PATTERNS = re.compile(
-    r"\.(exe|dll|bat|ps1|vbs|vbe|msi|bin|elf|sh|py|rb|pl)(\?|&|$|%)",
-    re.IGNORECASE
-)
 
 class MaliciousFileUploadRule(PerEventRule):
     """Detects uploads of potentially malicious files based on URL patterns and HTTP method."""
     rule_id = "WEB_MALICIOUS_UPLOAD_001"
 
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         url = _url(event)
         method = (event.http.request_method or "").upper() if event.http else ""
 
@@ -338,6 +430,9 @@ class MaliciousFileUploadRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Malicious Executable Upload",
+            rule_type="per_event",
+            requires=[],
+            provides=[],
             severity=severity,
             confidence=confidence,
             technique_id="T1608.001",
@@ -347,13 +442,17 @@ class MaliciousFileUploadRule(PerEventRule):
             tags=["upload", "malware", "executable", "web"],
             source="web_logs",
             description=f"Upload of malicious executable from {_ip(event)}: {url}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
             extra={
                 "source_ip": _ip(event),
                 "url": url,
                 "status_code": _status(event),
                 "high_risk": bool(high_risk_ext),
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event),
             }
         )
 
@@ -361,18 +460,13 @@ class UploadedFileAccessRule(PerEventRule):
     """Detects access to uploaded files with potential execution parameters."""
     rule_id = "WEB_UPLOAD_ACCESS_001"
     
-    _UPLOAD_ACCESS = re.compile(
-        r"/(upload|uploads|files|media|hackable)/.+\.(jpg|jpeg|png|gif|pdf)",
-        re.IGNORECASE
-    )
-
-    def match(self, event: NormalizedEvent, index: int) -> Optional[DetectionFinding]:
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         url = _url(event)
         method = (event.http.request_method or "").upper() if event.http else ""
         
         if method != "GET" or not url:
             return None
-        if not self._UPLOAD_ACCESS.search(url):
+        if not _UPLOAD_ACCESS.search(url):
             return None
         
         if not re.search(r"\?(cmd|exec|system|page)=", url, re.IGNORECASE):
@@ -381,6 +475,9 @@ class UploadedFileAccessRule(PerEventRule):
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Uploaded File Execution Attempt",
+            rule_type="per_event",
+            requires=[Capability("webshell_dropped", bind=("source_ip", "file_name"), values=(_ip(event), _file_name(event)))],
+            provides=[Capability("code_execution", bind=("command",), values=(_cmd_from_url(url),))],
             severity=Severity.CRITICAL,
             confidence=0.92,
             technique_id="T1505.003",
@@ -390,17 +487,19 @@ class UploadedFileAccessRule(PerEventRule):
             tags=["webshell", "upload", "execution"],
             source="web_logs",
             description=f"Access to uploaded file with execution parameters from {_ip(event)}: {url}",
-            timestamp=_ts(event) or datetime.now(timezone.utc),
-            triggered_by=[index],
-            extra={"source_ip": _ip(event), "url": url}
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
+            extra={"source_ip": _ip(event), "url": url},
+            entities={
+                "source_ip": _ip(event),
+                "file_name": _file_name(event),
+                "command": _cmd_from_url(url)
+            }
         )
 
 # ────────────────────────────────────────────
 # AGGREGATE RULES
 # ───────────────────────────────────────────
-
-
-MAX_INDICES = 20 # Limit the number of the triggering events we store in the finding to avoid huge payloads
 
 class BruteForceRule(AggregateRule):
     """Detects potential brute force attacks based on multiple failed auth attempts from the same IP to the same URL."""
@@ -429,23 +528,29 @@ class BruteForceRule(AggregateRule):
             auth_keywords = ("login", "signin", "auth", "password", "brute")
             confidence = 0.95 if any(k in url for k in auth_keywords) else 0.80
 
-            indices = [i for i, _ in hits]
+            ids = [e.id for _, e in hits]
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="Web Brute Force",
-                severity=Severity.HIGH,
+                rule_type="aggregate",
+                requires=[],
+                provides=[Capability("credential_candidate", bind=("source_ip",), values=(_ip(hits[0][1]),))],
+                severity=Severity.MEDIUM,
                 confidence=confidence,
                 technique_id="T1110",
                 technique_name="Brute Force",
                 tactic=MitreTactic.CREDENTIAL_ACCESS,
-                kill_chain_phase=KillChainPhase.EXPLOITATION,
+                kill_chain_phase=KillChainPhase.DELIVERY,
                 tags=["bruteforce", "web", "auth"],
                 source="web_logs",
                 description=f"{len(hits)} repeated requests to '{url}' from {ip}",
-                timestamp=_ts(hits[0][1]) or datetime.now(timezone.utc),
-                triggered_by=indices[:MAX_INDICES],
+                timestamp=_ts(hits[0][1]) or None,
+                triggered_by=ids,
                 event_count=len(hits),
-                extra={"source_ip": ip, "target_url": url}
+                extra={"source_ip": ip, "target_url": url},
+                entities={
+                    "source_ip": ip,
+                }
             ))
 
         return findings
@@ -467,40 +572,40 @@ class ReconScannerRule(AggregateRule):
             if len(hits) < self.THRESHOLD:
                 continue
 
-            indices = [i for i, _ in hits]
+            ids = [e.id for _, e in hits]
             first_ts = _ts(hits[0][1])
             urls = [_url(e) for _, e in hits[:5]] 
 
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="Web Directory Scanning",
+                rule_type="aggregate",
+                requires=[],
+                provides=[],
                 severity=Severity.MEDIUM,
                 confidence=0.85,
                 technique_id="T1595.003",
                 technique_name="Wordlist Scanning",
                 tactic=MitreTactic.INITIAL_ACCESS,
-                kill_chain_phase=KillChainPhase.RECONNAISSANCE,
+                kill_chain_phase= KillChainPhase.RECONNAISSANCE,
                 tags=["recon", "scanning", "web"],
                 source="web_logs",
                 description=f"{len(hits)} 404 requests from {ip} — possible directory scan",
-                timestamp=first_ts or datetime.now(timezone.utc),
-                triggered_by=indices[:MAX_INDICES],
+                timestamp= first_ts or None ,
+                triggered_by=ids,
                 event_count=len(hits),
                 extra={
                     "source_ip": ip,
                     "sample_urls": urls,
+                },
+                entities={
+                    "source_ip": ip,
                 }
             ))
 
         return findings
 
 
-_SCANNER_UA_PATTERNS = re.compile(
-    r"(sqlmap|nikto|nmap|masscan|dirbuster|gobuster|wfuzz"
-    r"|burpsuite|hydra|medusa|nessus|openvas|nuclei|zgrab"
-    r"|python-requests|python-urllib|curl|wget|go-http-client)",
-    re.IGNORECASE,
-)
 
 class ScannerUserAgentRule(AggregateRule):
     """Detects potential reconnaissance tools based on user agent strings."""
@@ -522,13 +627,16 @@ class ScannerUserAgentRule(AggregateRule):
                 by_tool[tool].append((i, e))
 
         for tool, hits in by_tool.items():
-            indices = [i for i, _ in hits]
+            ids = [e.id for _, e in hits]
             first_ts = _ts(hits[0][1])
             source_ips = list({_ip(e) for _, e in hits if _ip(e)})
 
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="Known Scanner Detected",
+                rule_type="aggregate",
+                requires=[],
+                provides=[],
                 severity=Severity.MEDIUM,
                 confidence=0.95,
                 technique_id="T1595",
@@ -538,16 +646,89 @@ class ScannerUserAgentRule(AggregateRule):
                 tags=["scanner", "recon", "web"],
                 source="web_logs",
                 description=f"Scanning tool '{tool}' detected — {len(hits)} requests from {len(source_ips)} IPs",
-                timestamp=first_ts or datetime.now(timezone.utc),
-                triggered_by=indices[:MAX_INDICES],
+                timestamp= first_ts or None,
+                triggered_by=ids,
                 event_count=len(hits),
                 extra={
                     "tool": tool,
-                    "source_ips": source_ips,
-                }
+                    "source_ip": source_ips,
+                },
             ))
 
         return findings
+    
+
+class SuccessfulLoginAfterBruteForce(AggregateRule):
+    rule_id = "WEB_LOGIN_SUCCESS_AFTER_BF_001"
+    FAILED_THRESHOLD = 3
+
+    def match(self, events: list[NormalizedEvent]) -> list[DetectionFinding]:
+        sorted_events = sorted(
+            [e for e in events if e.url and e.http],
+            key=lambda e: _ts(e)
+        )
+
+        failed:  dict[str, list[tuple[str, datetime]]] = defaultdict(list)
+        already_detected: set[str] = set()
+        findings = []
+
+        for idx, e in enumerate(sorted_events):
+            ip     = e.source.address if e.source else None
+            path   = e.url.path if e.url else ""
+            method = e.http.request_method if e.http else ""
+            status = e.http.response_status_code if e.http else None
+
+            if not ip or "/login.php" not in path:
+                continue
+
+            if method == "POST" and status == 302:
+                next_req = next(
+                    (n for n in sorted_events[idx + 1:]
+                     if n.source and n.source.address == ip and n.http),
+                    None
+                )
+                if not next_req:
+                    failed[ip].append((e.id, e.timestamp))
+                    continue
+
+                next_path   = next_req.url.path if next_req.url else ""
+                next_status = next_req.http.response_status_code if next_req.http else None
+
+                if "/login.php" not in next_path:
+                    if ip in already_detected:
+                        continue
+                    prior = failed.get(ip, [])
+                    if len(prior) >= self.FAILED_THRESHOLD:
+                        triggered = [eid for eid, _ in prior[-10:]] + [e.id]
+                        findings.append(DetectionFinding(
+                            rule_id=self.rule_id,
+                            rule_name="Successful Login After Brute Force",
+                            rule_type="aggregate",
+                            requires=[Capability("credential_candidate", bind=("source_ip",), values=(ip,))],
+                            provides=[Capability("valid_credential", bind=("source_ip",), values=(ip,))],
+                            severity=Severity.HIGH,
+                            confidence=0.92,
+                            technique_id="T1110",
+                            technique_name="Brute Force",
+                            tactic=MitreTactic.CREDENTIAL_ACCESS,
+                            kill_chain_phase=KillChainPhase.DELIVERY,
+                            tags=["bruteforce", "login", "success", "web"],
+                            source="web_logs",
+                            description=f"Login success on /login.php from {ip} after {len(prior)} failed attempts",
+                            timestamp=_ts(e),
+                            triggered_by=triggered,
+                            event_count=len(triggered),
+                            extra={"source_ip": ip, "failed_count": len(prior)},
+                            entities={
+                                "source_ip": ip,
+                            }
+                        ))
+                        already_detected.add(ip)
+                else:
+                    failed[ip].append((e.id, e.timestamp))
+
+        return findings
+  
 # ────────────────────────────────────────────
 # Factory 
 # ───────────────────────────────────────────
@@ -560,11 +741,12 @@ def get_web_rules() -> tuple[list[PerEventRule], list[AggregateRule]]:
         WebshellUploadRule(),
         WebshellExecutionRule(),
         MaliciousFileUploadRule(),
-        UploadedFileAccessRule()
+        UploadedFileAccessRule(),
     ]
     aggregate = [
         BruteForceRule(),
         ReconScannerRule(),
         ScannerUserAgentRule(),
+        SuccessfulLoginAfterBruteForce(),
     ]
     return per_event, aggregate

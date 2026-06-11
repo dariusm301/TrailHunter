@@ -7,6 +7,9 @@ from detection.rules.network import get_network_rules
 from detection.rules.registry import get_registry_rules
 from detection.rules.wmi import get_wmi_rules
 from detection.rules.processes import get_process_rules
+from detection.rules.powershell import get_powershell_rules
+from detection.rules.scheduled_tasks import get_scheduled_task_rules
+from detection.correlator import Correlator
 from services.storage import CollectionStorage
 from detection.engine import DetectionReport
 from pydantic import BaseModel
@@ -17,8 +20,8 @@ class DetectRequest(BaseModel):
     collection_id: str
     sources: list[str] = []  
 
-rules_functions = [get_web_rules, get_security_rules, get_sysmon_rules, get_network_rules, get_registry_rules, get_wmi_rules, get_process_rules]
-sources = ["security", "sysmon", "web_logs", "network", "registry", "wmi", "processes"]  
+rules_functions = [get_web_rules, get_security_rules, get_sysmon_rules, get_network_rules, get_registry_rules, get_wmi_rules, get_process_rules, get_powershell_rules, get_scheduled_task_rules]
+sources = ["security", "sysmon", "web_logs", "network", "registry", "wmi", "processes", "powershell", "scheduled_tasks"]  
 
 @router.post("/api/detect")
 async def detect(
@@ -39,18 +42,20 @@ async def detect(
 
     engine = DetectionEngine(per_event, aggregate)
 
+  
     #Load normalized data for system logs
+    sources = request.sources if request.sources != [] else storage_collection.available_channels()
     for source in sources:
-        logs = storage_collection.load_channel(source)
-        if not logs:
+        events = storage_collection.load_channel(source)
+        if not events:
             continue
         report = engine.analyze(
-            events=logs,
+            events=list(events.values()),
             collection_id=request.collection_id,
             source=source,
         )
-
         # Save the detection report
         storage_collection.save_report(source, report)
+
 
     return { "status" : "success"}

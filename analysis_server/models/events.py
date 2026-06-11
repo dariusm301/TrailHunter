@@ -81,8 +81,11 @@ class WinLogsFields (BaseModel):
     event_id : int | None = None
     provider_name : str | None = None
     computer_name : str | None = None
-    extra : str | None = None
+    extra : dict | None = None
 
+class LogonFields(BaseModel):
+    id: Optional[str] = None
+    type: Optional[str] = None
 
 class HTTPFields(BaseModel):
     request_method: str | None = None
@@ -121,9 +124,15 @@ class GroupFields(BaseModel):
     member_id: Optional[str] = None 
     member_name: Optional[str] = None
 
+class PowerShellFields(BaseModel):
+    script_block_id: Optional[str] = None
+    script_block_text: Optional[str] = None 
+    runspace_id: Optional[str] = None
+    sequence_number: Optional[int] = None    
+
 class NormalizedEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime | None = None
     event: EventFields | None = None
     host: HostFields | None = None
     user: UserFields | None = None
@@ -134,8 +143,13 @@ class NormalizedEvent(BaseModel):
     destination: DestinationFields | None = None
     registry: RegistryFields | None = None
     winlog: WinLogsFields | None = None
+    logon: LogonFields | None = None
     http: HTTPFields | None = None
     url: UrlFields | None = None
     file: FileFields | None = None
     dns : DNSFields | None = None
     group: GroupFields | None = None
+    powershell: PowerShellFields | None = None
+
+class CollectionSummary(BaseModel):
+    collector_ip: dict[str, list[str]]

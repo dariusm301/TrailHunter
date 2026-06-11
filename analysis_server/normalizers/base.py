@@ -35,7 +35,9 @@ class BaseNormalizer(ABC):
     def _clean(value: str | None) -> str | None:
         if value in ('', None, '-'):
             return None
-        return value.strip()
+        cleaned = value.lstrip("\\")
+        cleaned = cleaned.strip("'\"")
+        return cleaned
     
     @staticmethod
     def _hex_to_int(value: str) -> int | None:
