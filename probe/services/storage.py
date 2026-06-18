@@ -1,18 +1,18 @@
 import json
 from pathlib import Path
 from config import DATA_DIR
-from models.collection import CollectionPayload, CollectionSummary
+from models.collection import CollectionSummary
 
-async def save(payload: CollectionPayload, summary: CollectionSummary = None) -> None:
-    host_dir = DATA_DIR / payload.metadata.hostname
+async def save(raw_bytes: bytes, metadata, summary: CollectionSummary = None) -> None:
+    host_dir = DATA_DIR / metadata.hostname
     host_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = payload.metadata.collected_at.replace(":", "-")
-    filename = host_dir / timestamp / "collection.json"
+    timestamp = metadata.collected_at.replace(":", "-")
+    filename = host_dir / timestamp / "collection.bin"
     filename.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(payload.model_dump(), f, indent=2)
+    with open(filename, "wb") as f:
+        f.write(raw_bytes)
 
     summary_file = host_dir / timestamp / "summary.json"
     summary_file.parent.mkdir(parents=True, exist_ok=True)

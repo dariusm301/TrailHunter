@@ -1,6 +1,6 @@
 param(
     $ServerUrl = "http://172.28.112.1:8000",
-    $TimeRangeHours = 2
+    $TimeRangeHours = 48
 )
 $Hostname = $env:COMPUTERNAME
 $CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"

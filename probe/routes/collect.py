@@ -26,11 +26,12 @@ async def collect_data(
     
     payload = CollectionPayload.model_validate_json(raw_body)
     summary = CollectionSummary(
-        collector_ip=get_collector_ips()
+        collector_ip=get_collector_ips(),
+        sha256=x_collection_hash
     )
     try:
         if settings.store_local:
-            await storage.save(payload, summary)
+            await storage.save(raw_body, payload.metadata, summary)
     except Exception as e:
         print(f"Failed to save data locally: {e}")
 

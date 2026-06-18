@@ -28,3 +28,4 @@ class CollectionPayload(BaseModel):
 
 class CollectionSummary(BaseModel):
     collector_ip: dict[str, list[str]]
+    sha256: str | None = None

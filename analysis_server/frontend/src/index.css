@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+
+:root {
+  --color-ink: #001233;
+  --color-surface: #001845;    
+  --color-surface-2: #002855; 
+  --color-line: #1a3158;       
+  --color-line-strong: #33415c;
+
+  --color-fg: #e8eef6;         
+  --color-muted: #979dac;     
+  --color-muted-soft: #7d8597; 
+
+  --color-accent: #0466c8;
+  --color-accent-bright: #2a83e4;
+  --color-trail: #5b9bd5;      
+
+  --color-danger: #e0675a;
+
+  --color-node-process: #4d94dd;
+  --color-node-file: #5dd3a3;
+  --color-node-user: #0466c8;
+  --color-node-network: #b08cff;
+  --color-node-registry: #e4c95b;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.auth-screen {
+  position: relative;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.auth-backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 380px;
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  padding: 32px;
+  backdrop-filter: blur(7px);
+  box-shadow: 0 26px 64px -22px rgba(0, 6, 20, 0.7);
+}
+
+.wordmark {
+  font-weight: 800;
+  font-size: 25px;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.wordmark-trail {
+  color: var(--color-trail);
+}
+.wordmark-hunter {
+  color: #ffffff;
+}
+
+.eyebrow {
+  margin: 9px 0 26px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 8px;
+}
+
+.field-input {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.field-input::placeholder {
+  color: #4a5a78;
+}
+.field-input:hover {
+  border-color: var(--color-line-strong);
+}
+.field-input:focus {
+  border-color: var(--color-accent);
+  background: #00306a;
+  outline: none;
+}
+
+.login-error {
+  margin: -2px 0 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-danger);
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 11px 16px;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-bright);
+  border-color: var(--color-accent-bright);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.login-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+@keyframes th-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
