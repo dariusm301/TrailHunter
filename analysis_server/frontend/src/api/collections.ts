@@ -1,14 +1,14 @@
 import type { ScanSummary } from '@/types/scan'
-import { apiGet, apiPost } from './client'
 import type { CorrelationGraph } from '@/types/graph'
 import type { DetectResult } from '@/types/alerts'
+import { apiGet, apiPost, apiUploadRaw, apiFetch } from './client'
 
 export function fetchScans(): Promise<ScanSummary[]> {
   return apiGet<ScanSummary[]>('/collections')
 }
 
 export async function fetchFindings(collectionId: string): Promise<DetectResult | null> {
-  const res = await fetch(`/api/collections/${encodeURIComponent(collectionId)}/findings`)
+  const res = await apiFetch(`/collections/${encodeURIComponent(collectionId)}/findings`)
   if (res.status === 404) return null
   if (!res.ok) return null
   const data = await res.json()
@@ -22,11 +22,9 @@ export function fetchCorrelation(
 ): Promise<CorrelationGraph> {
   return apiPost<CorrelationGraph>('/correlate', {
     collection_id: collectionId,
-    refresh: refresh,
+    refresh,
   })
 }
-
-import { apiUploadRaw } from './client'
 
 export interface IngestResponse {
   status: string
@@ -46,15 +44,11 @@ export function ingestProbePackage(
 }
 
 export function runDetection(collectionId: string): Promise<{ status: string }> {
-  return apiPost<{ status: string }>('/detect', {
-    collection_id: collectionId,
-  })
+  return apiPost<{ status: string }>('/detect', { collection_id: collectionId })
 }
 
 export function deleteCollection(collectionId: string): Promise<{ status: string }> {
-  return apiPost<{ status: string }>('/delete', {
-    collection_id: collectionId,
-  })
+  return apiPost<{ status: string }>('/delete', { collection_id: collectionId })
 }
 
 export interface CorrelationEnvelope {
@@ -70,28 +64,26 @@ export async function startCorrelation(
   collectionId: string,
   force = false,
 ): Promise<CorrelationEnvelope> {
-  const res = await fetch(`/api/correlate`, {
+  const res = await apiFetch('/correlate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ collection_id: collectionId, force }),
   })
-  if (!res.ok && res.status !== 202) throw new Error(`Correlate failed: ${res.status}`)
+  if (!res.ok && res.status !== 202) {
+    throw new Error(`Correlate failed: ${res.status}`)
+  }
   return res.json()
 }
 
-export async function pollCorrelation(
-  collectionId: string,
-): Promise<CorrelationEnvelope> {
-  const res = await fetch(`/api/correlate/${encodeURIComponent(collectionId)}/status`)
-
+export async function pollCorrelation(collectionId: string): Promise<CorrelationEnvelope> {
+  const res = await apiFetch(`/correlate/${encodeURIComponent(collectionId)}/status`)
   if (res.status === 404) {
     return { status: 'idle', phase: 'not_correlated', progress: null, error: null, graph: null }
   }
-
   const text = await res.text()
-
-  if (!res.ok) throw new Error(`Status failed: ${res.status}`)
-
+  if (!res.ok) {
+    throw new Error(`Status failed: ${res.status}`)
+  }
   try {
     return JSON.parse(text)
   } catch {

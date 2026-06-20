@@ -5,9 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from sqlalchemy.orm import Session
 from services.storage import CollectionStorage
 from detection.correlator import Correlator
 from detection.fusion import fuse_findings
+from services.database import SessionLocal
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="correlate")
 
@@ -51,42 +53,39 @@ def _flatten_ips(raw_ips) -> list:
     return []
 
 
-def _run_correlation(job: CorrelationJob) -> dict:
-    storage = CollectionStorage.load(collection_id=job.collection_id)
-
-    job.phase = "loading"
-    findings = storage.load_all_findings()
-    events = storage.load_all_channels()
-
-    job.phase = "fusing"
-    fused = fuse_findings(findings)
-
-    job.phase = "correlating"
-    correlator = Correlator(events, fused)
-    correlator.build_graph()
-
-    job.phase = "saving"
-    summary = storage.load_summary()
-    summary["actor_count"] = len(correlator.actor_groups)
-    summary["probe"] = summary.get("collector_ip") is not None
-    storage.save_summary(summary)
-
-    flat_ips = _flatten_ips(summary.get("collector_ip", {}))
-    payload = correlator.serialize(collector_ip=flat_ips)
-
-    storage.save_correlated(payload)
-    return payload
+def _run_correlation(job: CorrelationJob, user_id: str) -> dict:
+    db_session = SessionLocal()
+    try:
+        storage = CollectionStorage.load(collection_id=job.collection_id, user_id=user_id, db_session=db_session)
+        job.phase = "loading"
+        findings = storage.load_all_findings()
+        events = storage.load_all_channels()
+        job.phase = "fusing"
+        fused = fuse_findings(findings)
+        job.phase = "correlating"
+        correlator = Correlator(events, fused)
+        correlator.build_graph()
+        job.phase = "saving"
+        summary = storage.load_summary()
+        summary["actor_count"] = len(correlator.actor_groups)
+        summary["probe"] = summary.get("collector_ip") is not None
+        storage.save_summary(summary)
+        flat_ips = _flatten_ips(summary.get("collector_ip", {}))
+        payload = correlator.serialize(collector_ip=flat_ips)
+        storage.save_correlated(payload)
+        return payload
+    finally:
+        db_session.close()
 
 
-async def start_correlation(collection_id: str, force: bool) -> CorrelationJob:
+async def start_correlation(collection_id: str, force: bool, user_id: str, db_session: Session) -> CorrelationJob:
     async with _lock:
         existing = _jobs.get(collection_id)
         if existing and existing.status == "running":
             return existing
-
         if not force:
             try:
-                cached = CollectionStorage.load(collection_id=collection_id).load_correlated()
+                cached = CollectionStorage.load(collection_id=collection_id, user_id=user_id, db_session=db_session).load_correlated()
             except Exception:
                 cached = None
             if cached is not None:
@@ -94,14 +93,13 @@ async def start_correlation(collection_id: str, force: bool) -> CorrelationJob:
                                      result=cached, finished_at=time.time())
                 _jobs[collection_id] = job
                 return job
-
         job = CorrelationJob(collection_id)
         _jobs[collection_id] = job
 
     async def _runner():
         loop = asyncio.get_running_loop()
         try:
-            job.result = await loop.run_in_executor(_executor, _run_correlation, job)
+            job.result = await loop.run_in_executor(_executor, _run_correlation, job, user_id)
             job.status = "done"
             job.phase = "done"
         except Exception as e:

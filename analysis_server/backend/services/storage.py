@@ -1,40 +1,47 @@
 
 import json
-import hashlib
-from pathlib import Path
 from services.validator import compute_hash
 from datetime import datetime, timezone
 from models.events import NormalizedEvent
 from detection.models import DetectionReport, DetectionFinding
 import shutil
+from config import DATA_DIR
+from models.auth import Collection
 
 
-COLLECTIONS_ROOT = Path("collections")
+COLLECTIONS_ROOT = DATA_DIR / "collections"
 
 
 class CollectionStorage:
-    def __init__(self, hostname: str, timestamp: str):
+    def __init__(self, collection_id: str,  hostname: str, db_session, base_path: str | None = None):
         self.hostname = hostname
-        self.timestamp = timestamp
-        self.base_path = COLLECTIONS_ROOT / hostname / timestamp
+        self.db_session = db_session
+        self.base_path = COLLECTIONS_ROOT / collection_id
         self.raw_path = self.base_path / "raw"
         self.processed_path = self.base_path / "processed"
         self.reports_path = self.base_path / "reports"
         self.graphs_path = self.base_path / "graphs"
+        self.collection_id = collection_id
+        self.timestamp = datetime.now(timezone.utc).isoformat()
 
     @classmethod
-    def create(cls, hostname: str) -> "CollectionStorage":
+    def create(cls, hostname: str, user_id: str, db_session) -> "CollectionStorage":
         """Generate a new collection storage instance with a unique timestamp."""
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-        instance = cls(hostname, timestamp)
+        record = Collection(user_id=user_id, hostname=hostname,
+                            name = f"{hostname}_{datetime.now(timezone.utc).isoformat()}")
+        db_session.add(record)
+        db_session.commit()
+        instance = cls(record.id, hostname, db_session)
         instance._create_dirs()
         return instance
 
     @classmethod
-    def load(cls, collection_id: str) -> "CollectionStorage":
+    def load(cls, collection_id: str, user_id: str, db_session) -> "CollectionStorage":
         """Load an existing collection (for later analysis)."""
-        hostname, timestamp = collection_id.split("/", 1)
-        instance = cls(hostname, timestamp)
+        record = db_session.query(Collection).filter(Collection.id == collection_id, Collection.user_id == user_id).first()
+        if not record:
+            raise FileNotFoundError(f"Collection not found: {collection_id}")
+        instance = cls(collection_id, record.hostname, db_session)
         if not instance.base_path.exists():
             raise FileNotFoundError(f"Collection not found: {instance.base_path}")
         return instance
@@ -47,6 +54,7 @@ class CollectionStorage:
 
     def save_raw(self, data: bytes, provided_hash: str) -> bool:
         """Save raw bytes and write the summary. Returns False if the hash does not match."""
+            
         computed = compute_hash(data).lower()
         if computed != provided_hash.lower():
             return False
@@ -111,8 +119,6 @@ class CollectionStorage:
             p.stem for p in self.processed_path.glob("*.json") if p.stem != "summary"
         ]
 
-    def __repr__(self):
-        return f"<CollectionStorage {self.hostname}/{self.timestamp}>"
 
     def save_report(self, channel :str, report: DetectionReport):
         path = self.reports_path / f"{channel}.json"
@@ -152,23 +158,18 @@ class CollectionStorage:
             return json.load(fh)
 
     @staticmethod
-    def list_collections() -> list[str]:
+    def list_collections(user_id: str, db_session) -> list[str]:
         """List all available collections in the root directory."""
-        if not COLLECTIONS_ROOT.exists():
-            return []
-        return [
-            f"{p.parent.parent.name}/{p.parent.name}"
-            for p in COLLECTIONS_ROOT.glob("*/*/summary.json")
-        ]
+        record = db_session.query(Collection).filter(Collection.user_id == user_id).all()
+        return [r.id for r in record]
     
     def delete(self):
         """Delete this collection and all its data."""
         if self.base_path.exists():
             shutil.rmtree(self.base_path)
-            
-            parent_dir = self.base_path.parent
-            if parent_dir.exists() and not any(parent_dir.iterdir()):
-                try:
-                    parent_dir.rmdir()
-                except OSError:
-                    pass
+        record = self.db_session.query(Collection).filter(
+            Collection.id == self.collection_id
+        ).first()
+        if record:
+            self.db_session.delete(record)
+            self.db_session.commit()

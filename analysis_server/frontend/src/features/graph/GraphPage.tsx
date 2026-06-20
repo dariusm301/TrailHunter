@@ -1,6 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useAuth } from '@/auth/useAuth'
 import type { GraphNode, CorrelationGraph } from '@/types/graph'
 import type { DetectResult } from '@/types/alerts'
 import GraphCanvas from './GraphCanvas'
@@ -12,26 +11,25 @@ import TopMenu from '@/components/TopMenu'
 import CollectionActionBar from '@/components/CollectionActionBar'
 import { DetailsPanel } from '@/components/DetailsPanel'
 import AllAlertsDrawer from '@/components/AllAlertsDrawer'
+import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
 import logo from '@/assets/logo.svg'
+import AccountMenu from '@/components/AccountMenu'
+
 
 const SEV_ORDER = ['low', 'medium', 'high', 'critical'] as const
 type Severity = typeof SEV_ORDER[number]
-
 const PHASES = [
   'reconnaissance', 'weaponization', 'delivery', 'exploitation',
   'installation', 'command_and_control', 'actions_on_objectives',
 ] as const
-
 const SEV_COLORS: Record<string, string> = {
   low: '#22c55e', medium: '#f59e0b', high: '#f97316', critical: '#ef4444',
 }
-
 type EventFields = Record<string, unknown>
 
 function byTime(a: GraphNode, b: GraphNode) {
   return (a.fields.timestamp || '').localeCompare(b.fields.timestamp || '')
 }
-
 function maxSeverity(nodes: GraphNode[]): string {
   let best = -1
   let label = '—'
@@ -41,14 +39,12 @@ function maxSeverity(nodes: GraphNode[]): string {
   }
   return label
 }
-
 function phaseSpan(nodes: GraphNode[]): string {
   const sorted = [...nodes].sort(byTime)
   const first = sorted[0]?.fields.kill_chain || '—'
   const last = sorted[sorted.length - 1]?.fields.kill_chain || '—'
   return first === last ? first : `${first} → ${last}`
 }
-
 function collectStrings(obj: unknown): string[] {
   if (obj === null || obj === undefined) return []
   if (typeof obj === 'string') return [obj]
@@ -57,9 +53,7 @@ function collectStrings(obj: unknown): string[] {
   if (typeof obj === 'object') return Object.values(obj as Record<string, unknown>).flatMap(collectStrings)
   return []
 }
-
 const EMPTY_GRAPH: CorrelationGraph = { nodes: [], edges: [], actor_count: 0, collector_ips: [] }
-
 function eventMatches(fields: EventFields, q: string): boolean {
   return collectStrings(fields).some((s) => s.toLowerCase().includes(q))
 }
@@ -67,7 +61,6 @@ function eventMatches(fields: EventFields, q: string): boolean {
 interface Selected { kind: 'node' | 'edge'; id: string }
 
 export default function GraphPage() {
-  const { operator, signOut } = useAuth()
   const { collectionId } = useParams<{ collectionId: string }>()
   const navigate = useNavigate()
 
@@ -82,10 +75,8 @@ export default function GraphPage() {
     const g = data ?? EMPTY_GRAPH
     return { ...g, nodes: g.nodes ?? [], edges: g.edges ?? [] }
   }, [data])
-
   const safeNodes = safeGraph.nodes
   const safeEdges = safeGraph.edges
-
   const eventsMap: Record<string, EventFields> =
     (safeGraph as unknown as { events?: Record<string, EventFields> }).events ?? {}
 
@@ -95,11 +86,9 @@ export default function GraphPage() {
   const [selectedActor, setSelectedActor] = useState<number | 'general' | null>(null)
   const [selected, setSelected] = useState<Selected | null>(null)
   const [viewMode, setViewMode] = useState<'graph' | 'alerts'>('graph')
-
   const [alertSearch, setAlertSearch] = useState('')
   const [sevFilters, setSevFilters] = useState<Set<string>>(new Set())
   const [phaseFilters, setPhaseFilters] = useState<Set<string>>(new Set())
-
   const [detectResult, setDetectResult] = useState<DetectResult | null>(null)
 
   useEffect(() => {
@@ -110,7 +99,6 @@ export default function GraphPage() {
   }, [collectionId])
 
   const [allAlertsOpen, setAllAlertsOpen] = useState(false)
-
   const [processingAction, setProcessingAction] = useState<'detect' | 'delete' | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
 
@@ -168,10 +156,8 @@ export default function GraphPage() {
       arr.push(n)
       map.set(n.actor, arr)
     }
-
     const realActors: { id: number; nodes: GraphNode[]; linked: boolean; ip: string }[] = []
     const isolatedNodes: GraphNode[] = []
-
     for (const [id, nodes] of map.entries()) {
       const ids = new Set(nodes.map((n) => n.id))
       const internalEdges = safeEdges.filter((e) => ids.has(e.source) && ids.has(e.target))
@@ -188,7 +174,6 @@ export default function GraphPage() {
         isolatedNodes.push(...nodes)
       }
     }
-
     realActors.sort((a, b) => a.id - b.id)
     isolatedNodes.sort(byTime)
     return { realActors, isolatedNodes }
@@ -210,7 +195,6 @@ export default function GraphPage() {
   useEffect(() => {
     if (effectiveActor === 'general' && viewMode === 'graph') setViewMode('alerts')
   }, [effectiveActor, viewMode])
-
   useEffect(() => { clearFilters() }, [effectiveActor])
 
   const canvasElements = useMemo(
@@ -220,9 +204,7 @@ export default function GraphPage() {
         : toSwimlane(safeGraph, (n) => !isCollector(n) && n.actor === effectiveActor),
     [safeGraph, isCollector, effectiveActor],
   )
-
   const collectorElements = useMemo(() => toSwimlane(safeGraph, isCollector), [safeGraph, isCollector])
-
   const alertNodes = effectiveActor === 'general' ? isolatedNodes : effectiveActorObj?.nodes ?? []
 
   const availableSevs = useMemo(() => {
@@ -230,13 +212,11 @@ export default function GraphPage() {
     alertNodes.forEach((n) => { if (n.fields.severity && n.fields.severity !== '—') s.add(n.fields.severity.toLowerCase()) })
     return SEV_ORDER.filter((v) => s.has(v))
   }, [alertNodes])
-
   const availablePhases = useMemo(() => {
     const s = new Set<string>()
     alertNodes.forEach((n) => { if (n.fields.kill_chain && n.fields.kill_chain !== '—') s.add(n.fields.kill_chain) })
     return PHASES.filter((v) => s.has(v))
   }, [alertNodes])
-
   const filteredAlerts = useMemo(() => {
     const q = alertSearch.trim().toLowerCase()
     return alertNodes.filter((n) => {
@@ -296,7 +276,7 @@ export default function GraphPage() {
         <header style={S.header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Link to="/scans" style={S.back}>← Scans</Link>
-            <img src={logo} alt="TrailHunter" style={{ height: 45 }} />        
+            <img src={logo} alt="TrailHunter" style={{ height: 45 }} />
           </div>
         </header>
         <div style={S.body}>
@@ -314,7 +294,6 @@ export default function GraphPage() {
           <img src={logo} alt="TrailHunter" style={{ height: 45 }} />
           {collectionId && <span style={S.meta}>{collectionId}</span>}
         </div>
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <CollectionActionBar
             onRunDetection={handleRunDetection}
@@ -326,14 +305,12 @@ export default function GraphPage() {
             processingAction={barAction}
             isLoading={loading}
           />
-
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, borderLeft: '1px solid var(--color-line)', paddingLeft: 16 }}>
             <span style={S.meta}>{realActors.length} active actor{realActors.length === 1 ? '' : 's'}</span>
-            <button onClick={signOut} style={S.signout}>{operator?.username} · Sign out</button>
+            <AccountMenu />
           </div>
         </div>
       </header>
-
       <div style={S.body}>
         <aside style={S.left}>
           <div style={S.sideLabel}>Actors</div>
@@ -354,7 +331,6 @@ export default function GraphPage() {
               </button>
             )
           })}
-
           {isolatedNodes.length > 0 && (
             <>
               {realActors.length > 0 && <div style={{ height: 1, background: 'var(--color-line)', margin: '16px 0 8px' }} />}
@@ -373,14 +349,12 @@ export default function GraphPage() {
             </>
           )}
         </aside>
-
         <section style={{ ...S.center, display: 'flex', flexDirection: 'column' }}>
           <TopMenu
             viewMode={viewMode}
             onViewChange={setViewMode}
             disableGraph={effectiveActor === 'general' || effectiveActor == null}
           />
-
           <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
             {loading && data && (
               <div style={S.workingBanner}>
@@ -391,7 +365,6 @@ export default function GraphPage() {
             {error && data && (
               <div style={S.errorBanner}>Correlation failed: {error}</div>
             )}
-
             {viewMode === 'graph' && (
               effectiveActor == null ? (
                 <div style={S.empty}>No actors to display. Please run Detection and Correlate.</div>
@@ -405,7 +378,6 @@ export default function GraphPage() {
                 />
               )
             )}
-
             {viewMode === 'alerts' && (
               <div style={S.alertList} onClick={() => setSelected(null)}>
                 <div style={S.filterBar} onClick={(e) => e.stopPropagation()}>
@@ -421,7 +393,6 @@ export default function GraphPage() {
                       <button style={S.alertSearchClear} onClick={() => setAlertSearch('')}>✕</button>
                     )}
                   </div>
-
                   {availableSevs.length > 0 && (
                     <div style={S.chipRow}>
                       {availableSevs.map((sev) => {
@@ -438,7 +409,6 @@ export default function GraphPage() {
                       })}
                     </div>
                   )}
-
                   {availablePhases.length > 0 && (
                     <div style={S.chipRow}>
                       {availablePhases.map((phase) => {
@@ -455,7 +425,6 @@ export default function GraphPage() {
                       })}
                     </div>
                   )}
-
                   <div style={S.filterMeta}>
                     <span style={S.meta}>{filteredAlerts.length} / {alertNodes.length}</span>
                     {hasAlertFilters && (
@@ -463,7 +432,6 @@ export default function GraphPage() {
                     )}
                   </div>
                 </div>
-
                 {filteredAlerts.map((n) => {
                   const isSelected = selected?.kind === 'node' && selected.id === n.id
                   return (
@@ -492,7 +460,6 @@ export default function GraphPage() {
                     </div>
                   )
                 })}
-
                 {filteredAlerts.length === 0 && hasAlertFilters && (
                   <div style={{ ...S.empty, height: 'auto', paddingTop: 40 }}>
                     No results for the active filters. Try clearing some filters or search terms.
@@ -502,7 +469,6 @@ export default function GraphPage() {
             )}
           </div>
         </section>
-
         {collectorNodes.length > 0 && (
           <aside style={S.right}>
             <div style={S.sideLabel}>Collector activity</div>
@@ -513,48 +479,31 @@ export default function GraphPage() {
           </aside>
         )}
       </div>
-
       <AllAlertsDrawer
         open={allAlertsOpen}
         onClose={() => setAllAlertsOpen(false)}
         detectResult={detectResult}
         eventsMap={eventsMap}
       />
-
       <DetailsPanel
         node={selectedNode}
         edge={selectedEdge}
         eventsMap={eventsMap}
         onClose={() => setSelected(null)}
       />
-
-      {/* ── Delete Modal ── */}
       {showDeleteModal && (
-        <div style={S.modalOverlay}>
-          <div style={S.modalContent}>
-            <h2 style={S.modalTitle}>Delete Collection?</h2>
-            <p style={S.modalText}>
+        <ConfirmDeleteModal
+          title="Delete Collection?"
+          message={
+            <>
               Are you sure you want to permanently delete data for <strong>{collectionId}</strong>?
               All raw files, metadata, and generated graphs will be wiped from the disk. This action cannot be undone.
-            </p>
-            <div style={S.modalActions}>
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                style={S.modalCancelBtn}
-                disabled={processingAction === 'delete'}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                style={S.modalDeleteBtn}
-                disabled={processingAction === 'delete'}
-              >
-                {processingAction === 'delete' ? 'Deleting...' : 'Yes, delete'}
-              </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          isProcessing={processingAction === 'delete'}
+          onConfirm={handleDelete}
+          onCancel={() => setShowDeleteModal(false)}
+        />
       )}
     </div>
   )
@@ -569,7 +518,7 @@ const S: Record<string, React.CSSProperties> = {
   wordmark: { fontWeight: 800, letterSpacing: '-0.01em', fontSize: 18 },
   back: { color: 'var(--color-muted)', textDecoration: 'none', fontSize: 13 },
   meta: { fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-muted)' },
-  signout: { background: 'transparent', border: 'none', color: 'var(--color-muted)', cursor: 'pointer', fontSize: 13 },
+  signout: { background: 'transparent', border: 'none', color: 'var(--color-muted)', cursor: 'pointer', fontSize: 13, textDecoration: 'none' },
   body: { flex: 1, display: 'flex', minHeight: 0 },
   left: { width: 248, flexShrink: 0, borderRight: '1px solid var(--color-line)', overflowY: 'auto', padding: 12 },
   sideLabel: {
@@ -645,24 +594,4 @@ const S: Record<string, React.CSSProperties> = {
   },
   rightCanvas: { height: 280, border: '1px solid var(--color-line)', borderRadius: 8, overflow: 'hidden' },
   rightNote: { fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--color-muted)', lineHeight: 1.5, marginTop: 10 },
-  modalOverlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(3px)',
-    zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-  modalContent: {
-    background: 'var(--color-surface,#0f172a)', border: '1px solid var(--color-line)',
-    padding: 24, borderRadius: 12, width: '100%', maxWidth: 400,
-    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
-  },
-  modalTitle: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: '#fff' },
-  modalText: { margin: '0 0 24px', fontSize: 13, color: 'var(--color-muted)', lineHeight: 1.5 },
-  modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 12 },
-  modalCancelBtn: {
-    background: 'transparent', border: '1px solid var(--color-line)',
-    color: 'var(--color-fg)', padding: '8px 16px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
-  },
-  modalDeleteBtn: {
-    background: '#ef4444', border: '1px solid #dc2626', color: '#fff',
-    padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-  },
 }

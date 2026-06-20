@@ -1,14 +1,27 @@
 import { createContext } from 'react'
 
-export interface Operator {
+export interface AuthUser {
+  id: string
   username: string
+  is_admin: boolean
+}
+
+export interface SignInParams {
+  username: string
+  password: string
 }
 
 export interface AuthContextValue {
-  operator: Operator | null
+  user: AuthUser | null
+  accessToken: string | null
+  loading: boolean
+  setupRequired: boolean
   isAuthenticated: boolean
-  signIn: (creds: { username: string; password: string }) => Promise<Operator>
-  signOut: () => void
+  signIn: (params: SignInParams) => Promise<void>
+  signOut: () => Promise<void>
+  register: (params: SignInParams) => Promise<void>
 }
+
+
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

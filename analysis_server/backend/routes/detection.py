@@ -1,4 +1,8 @@
-from fastapi import APIRouter, HTTPException, Header, Request
+from services.database import get_db
+from services.dependencies import get_current_user
+from models.auth import User
+from fastapi import APIRouter, HTTPException, Header, Request, Depends
+from sqlalchemy.orm import Session
 from detection.engine import DetectionEngine
 
 from detection.correlator import Correlator
@@ -29,10 +33,12 @@ rules_functions = [get_auth_rules, get_connection_rules, get_processes_rules, ge
 @router.post("/api/detect")
 async def detect(
     request : DetectRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db)
 ):
 
     try:
-        storage_collection = CollectionStorage.load(request.collection_id)
+        storage_collection = CollectionStorage.load(request.collection_id, current_user.id, db_session)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Collection not found")
 

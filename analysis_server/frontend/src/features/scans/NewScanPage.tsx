@@ -13,7 +13,7 @@ async function calculateFileHash(file: File): Promise<string> {
 }
 
 export default function NewScanPage() {
-  const { operator, signOut } = useAuth()
+  const { user, signOut } = useAuth()
   const navigate = useNavigate()
   
   const [probePackage, setProbePackage] = useState<File | null>(null)
@@ -64,7 +64,7 @@ export default function NewScanPage() {
           </span>
         </div>
         <button onClick={signOut} style={S.signout}>
-          {operator?.username} · Sign out
+          {user?.username} · Sign out
         </button>
       </header>
 

@@ -5,6 +5,7 @@ import type { ScanSummary } from '@/types/scan'
 import { useAsync } from '@/lib/useAsync'
 import { fetchScans } from '@/api/collections'
 import logo from '@/assets/logo.svg'
+import AccountMenu from '@/components/AccountMenu'
 
 const SEV_ORDER = ['low', 'medium', 'high', 'critical']
 
@@ -21,7 +22,7 @@ function fmtDate(iso: string): string {
 }
 
 export default function ScansPage() {
-  const { operator, signOut } = useAuth()
+  
   const navigate = useNavigate()
 
   const { data, loading, error } = useAsync(() => fetchScans(), [])
@@ -91,9 +92,7 @@ export default function ScansPage() {
     <div style={S.root}>
       <header style={S.header}>
         <img src={logo} alt="TrailHunter" style={{ height: 45 }} />
-        <button onClick={signOut} style={S.signout}>
-          {operator?.username} · Sign out
-        </button>
+        <AccountMenu/>
       </header>
 
       <main style={S.main}>
@@ -144,8 +143,6 @@ export default function ScansPage() {
                 <th style={S.th}>Collected</th>
                 <th style={{ ...S.th, ...S.num }}>Events</th>
                 <th style={{ ...S.th, ...S.num }}>Findings</th>
-                {/* <th style={{ ...S.th, ...S.num }}>Actors</th>
-                <th style={S.th}>Severity</th> */}
                 <th style={S.th}>Probe</th>
               </tr>
             </thead>
@@ -179,19 +176,7 @@ export default function ScansPage() {
                       <td style={{ ...S.td, ...S.num, fontWeight: 600 }}>
                         {g.maxFindings !== null ? g.maxFindings.toLocaleString() : '—'}
                       </td>
-                      {/* <td style={{ ...S.td, ...S.num, fontWeight: 600 }}>
-                        {g.maxActors !== null ? g.maxActors.toLocaleString() : '—'}
-                      </td>
                       
-                      <td style={S.td}>
-                        {g.maxSeverity ? (
-                          <span style={{ ...S.badge, color: SEV_COLOR[g.maxSeverity] ?? '#979dac', borderColor: SEV_COLOR[g.maxSeverity] ?? '#33415c' }}>
-                            {g.maxSeverity}
-                          </span>
-                        ) : (
-                          <span style={S.dash}>—</span>
-                        )}
-                      </td> */}
                       <td style={S.td}>{g.latestScan.has_collector ? 'yes' : '—'}</td>
                     </tr>
 
@@ -220,16 +205,6 @@ export default function ScansPage() {
                         <td style={S.td}>{fmtDate(s.collected_at)}</td>
                         <td style={{ ...S.td, ...S.num, color: 'var(--color-muted)' }}>{s.event_count.toLocaleString()}</td>
                         <td style={{ ...S.td, ...S.num, color: 'var(--color-muted)' }}>{s.finding_count ?? '—'}</td>
-                        {/* <td style={{ ...S.td, ...S.num, color: 'var(--color-muted)' }}>{s.actor_count ?? '—'}</td>
-                        <td style={S.td}>
-                          {s.max_severity ? (
-                            <span style={{ ...S.badge, fontSize: 10, padding: '1px 6px', color: SEV_COLOR[s.max_severity] ?? '#979dac', borderColor: SEV_COLOR[s.max_severity] ?? '#33415c' }}>
-                              {s.max_severity}
-                            </span>
-                          ) : (
-                            <span style={S.dash}>—</span>
-                          )}
-                        </td> */}
                         <td style={S.td}>{s.has_collector ? 'yes' : '—'}</td>
                       </tr>
                     ))}

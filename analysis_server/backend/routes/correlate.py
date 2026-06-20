@@ -1,6 +1,10 @@
-from fastapi import APIRouter, HTTPException, Response
+from services.dependencies import get_current_user
+from models.auth import User
+from services.database import get_db
+from fastapi import APIRouter, HTTPException, Response, Depends
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy.orm import Session
 
 from services.storage import CollectionStorage
 from services.correlation_jobs import start_correlation, get_job
@@ -14,26 +18,31 @@ class CorrelateRequest(BaseModel):
 
 
 @router.post("/api/correlate")
-async def correlate(request: CorrelateRequest, response: Response):
+async def correlate(request: CorrelateRequest, 
+                    response: Response, 
+                    current_user : User = Depends(get_current_user), 
+                    db_session: Session = Depends(get_db)):
     try:
-        CollectionStorage.load(collection_id=request.collection_id)
+        CollectionStorage.load(collection_id=request.collection_id, user_id=current_user.id, db_session=db_session)
     except Exception:
         raise HTTPException(status_code=404, detail="Collection not found")
 
-    job = await start_correlation(request.collection_id, force=bool(request.force))
+    job = await start_correlation(request.collection_id, force=bool(request.force), user_id=current_user.id, db_session=db_session)
     if job.status == "running":
         response.status_code = 202
     return job.envelope()
 
 
 @router.get("/api/correlate/{collection_id:path}/status")
-async def correlate_status(collection_id: str):
+async def correlate_status(collection_id: str, 
+                           current_user : User = Depends(get_current_user), 
+                           db_session: Session = Depends(get_db)):
     job = get_job(collection_id)
     if job is not None:
         return job.envelope()
 
     try:
-        cached = CollectionStorage.load(collection_id=collection_id).load_correlated()
+        cached = CollectionStorage.load(collection_id=collection_id, user_id=current_user.id, db_session=db_session).load_correlated()
     except Exception:
         cached = None
     if cached is not None:

@@ -2,25 +2,36 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
-import logo from '@/assets/logo.svg'
 import { FingerprintBackdrop } from '@/components/AuthBackdrop'
+import logo from '@/assets/logo.svg'
 
-export default function LoginPage() {
-  const { signIn } = useAuth()
+export default function SetupPage() {
+  const { register } = useAuth()
   const navigate = useNavigate()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+
     setBusy(true)
     try {
-      await signIn({ username: username.trim(), password })
-      navigate("/scans")
+      await register({ username: username.trim(), password })
+      navigate('/login', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
       setBusy(false)
@@ -30,15 +41,13 @@ export default function LoginPage() {
   return (
     <div className="auth-screen">
       <FingerprintBackdrop />
-
       <div className="login-card">
-        <img src={logo} alt="TrailHunter" style={{ height: 50, marginLeft: -20}} />
-        <p className="eyebrow">Forensic Console</p>
-
+        <img src={logo} alt="TrailHunter" style={{ height: 50, marginLeft: -20 }} />
+        <p className="eyebrow">Initial Setup</p>
         <form onSubmit={handleSubmit} noValidate>
           <div className="field">
             <label htmlFor="username" className="field-label">
-              Username
+              Administrator username
             </label>
             <input
               id="username"
@@ -52,7 +61,6 @@ export default function LoginPage() {
               onChange={(e) => setUsername(e.target.value)}
             />
           </div>
-
           <div className="field">
             <label htmlFor="password" className="field-label">
               Password
@@ -61,24 +69,35 @@ export default function LoginPage() {
               id="password"
               className="field-input"
               type="password"
-              autoComplete="current-password"
+              autoComplete="new-password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-
+          <div className="field">
+            <label htmlFor="confirm-password" className="field-label">
+              Confirm password
+            </label>
+            <input
+              id="confirm-password"
+              className="field-input"
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </div>
           {error && (
             <p role="alert" className="login-error">
               {error}
             </p>
           )}
-
           <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
+            {busy ? 'Creating account…' : 'Create administrator account'}
           </button>
         </form>
-
       </div>
     </div>
   )
