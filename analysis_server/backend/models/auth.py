@@ -1,8 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
 from sqlalchemy.orm import relationship
+from services.utcdatetime import UTCDateTime
 
 from services.database import Base
 
@@ -14,7 +15,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime(), default=datetime.now(timezone.utc))
     is_admin = Column(Boolean, default=False)
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     probe_tokens = relationship("ProbeToken", back_populates="user", cascade="all, delete-orphan")
@@ -29,9 +30,9 @@ class RefreshToken(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=True)
     token_hash = Column(String, unique=True, index=True, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(UTCDateTime(), nullable=False)
     revoked = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime(), default=datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="refresh_tokens")
 
@@ -43,10 +44,13 @@ class ProbeToken(Base):
     name = Column(String, nullable=True)
     device_identifier = Column(String, nullable=True)
     token_hash = Column(String, unique=True, index=True, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(UTCDateTime(), nullable=True)
     revoked = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(UTCDateTime(), default=datetime.now(timezone.utc))
+    used_at = Column(UTCDateTime(), nullable=True)
+    last_used_at = Column(UTCDateTime(), nullable=True)
+    single_use = Column(Boolean, default=False)
+    token_type = Column(String, nullable=False, default="hardware") 
     
     user = relationship("User", back_populates="probe_tokens")
 
@@ -58,6 +62,6 @@ class Collection(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     storage_path = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime(), default=datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="collections")

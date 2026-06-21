@@ -1,4 +1,4 @@
-from routes import correlate, detection, collections, ingest, auth, ingest_probe, probe_tokens, users
+from routes import correlate, detection, collections, ingest, auth, ingest_probe, probe_tokens, users, serve_scripts
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -27,6 +27,7 @@ app.include_router(auth.router)
 app.include_router(ingest_probe.router)
 app.include_router(probe_tokens.router)
 app.include_router(users.router)
+app.include_router(serve_scripts.router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=settings.host, port=settings.port, reload=True)

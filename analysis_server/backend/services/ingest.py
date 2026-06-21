@@ -15,6 +15,8 @@ def handle_ingest(
     x_collection_summary: str | None,
     db_session: Session,
 ) -> CollectionStorage:
+    print(f"HASH: {x_collection_hash}")
+    print(f"CALCULATED HASH: {validator.compute_hash(raw_body)}")
     if not validator.verify_hash(raw_body, x_collection_hash):
         raise HTTPException(status_code=400, detail="Hash mismatch - data integrity check failed")
 

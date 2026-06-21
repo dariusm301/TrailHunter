@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 BASE_DIR = Path(__file__).parent
-COLLECTOR_DIR = BASE_DIR.parent / "collector"
+COLLECTOR_DIR = BASE_DIR / "collector"
 DATA_DIR = BASE_DIR / "data"
 
 

@@ -11,8 +11,8 @@ import json
 
 router = APIRouter()
 
-@router.post("/collect", response_model=CollectResponse)
-async def collect_data(
+@router.post("/api/probe/ingest", response_model=CollectResponse)
+async def ingest_data(
     request: Request,
     x_collection_hash: Optional[str] = Header(None)
 ):

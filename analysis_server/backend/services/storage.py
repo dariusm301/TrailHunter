@@ -62,7 +62,7 @@ class CollectionStorage:
         (self.raw_path / "collection.bin").write_bytes(data)
 
         summary = self.load_summary()
-        if summary.get("sha256", "").lower() != provided_hash.lower():
+        if summary and summary.get("sha256", "").lower() != provided_hash.lower():
             return False
         
         summary.update({

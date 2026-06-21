@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from services.dependencies import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 def _issue_refresh_token(db: Session, user_id: str) -> str:
     raw_token = generate_refresh_token()
-    expires_at = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
 
     db_token = RefreshToken(
         user_id=user_id,
@@ -94,7 +94,7 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         .first()
     )
 
-    if not db_token or db_token.expires_at < datetime.utcnow():
+    if not db_token or db_token.expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",

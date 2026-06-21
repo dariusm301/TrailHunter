@@ -8,7 +8,7 @@ import SetupPage from '@/features/login/SetupPage'
 import ScansPage from '@/features/scans/ScansPage'
 import GraphPage from '@/features/graph/GraphPage'
 import NewScanPage from '@/features/scans/NewScanPage'
-import { UsersPage } from '@/features/login/UsersPage'
+import { UsersPage } from '@/features/settings/UsersPage'
 import { ProbeTokensPage } from './features/settings/ProbeTokensPage'
 
 function AppRoutes() {
