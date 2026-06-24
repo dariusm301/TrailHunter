@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+from models.auth import ProbeToken
 from fastapi import APIRouter, HTTPException, Header, Request, Depends
 from sqlalchemy.orm import Session
 from typing import Optional
