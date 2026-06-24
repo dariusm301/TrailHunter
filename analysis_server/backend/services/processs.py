@@ -1,4 +1,5 @@
 import json
+from normalizers.base import BaseNormalizer
 from services.storage import CollectionStorage
 from normalizers.windows.wmi import WMINormalizer
 from normalizers.windows.security import SecurityNormalizer
@@ -11,7 +12,7 @@ from normalizers.windows.processes import ProcessesNormalizer
 from normalizers.windows.registry import RegistryNormalizer
 from normalizers.windows.scheduled_tasks import ScheduledTasksNormalizer
 from normalizers.apache import ApacheNormalizer
-
+from normalizers.helpers.probe_ip import _resolve_probe_ips
 
 def process_collection(storage: CollectionStorage):
     raw_data = storage.load_raw()
@@ -21,6 +22,9 @@ def process_collection(storage: CollectionStorage):
     hostname = payload['metadata']['hostname']
     collected_at = payload['metadata']['collected_at']
     os_version = payload['metadata']['os_version']
+    
+    summary = storage.load_summary()
+    probe_ips = _resolve_probe_ips(summary)
 
     wmi_normalizer = WMINormalizer()
     wmi_events = payload.get('modules').get('event_logs').get('wmi', [])
@@ -29,6 +33,7 @@ def process_collection(storage: CollectionStorage):
         for event in wmi_events:
             normalized_event = wmi_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 wmi_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize WMI event: {event}")
@@ -42,6 +47,7 @@ def process_collection(storage: CollectionStorage):
         for event in security_events:
             normalized_event = security_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 security_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize Security event: {event.get('event_id')}")
@@ -54,6 +60,7 @@ def process_collection(storage: CollectionStorage):
         for event in sysmon_events:
             normalized_event = sysmon_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 sysmon_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize Sysmon event: {event.get('event_id')}")
@@ -66,6 +73,7 @@ def process_collection(storage: CollectionStorage):
         for event in application_events:
             normalized_event = application_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 application_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize Application event: {event.get('event_id')}")
@@ -78,6 +86,7 @@ def process_collection(storage: CollectionStorage):
         for event in system_events:
             normalized_event = system_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 system_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize System event: {event.get('event_id')}")
@@ -90,6 +99,7 @@ def process_collection(storage: CollectionStorage):
         for event in powershell_events:
             normalized_event = powershell_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 powershell_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize PowerShell event: {event.get('event_id')}")
@@ -102,6 +112,7 @@ def process_collection(storage: CollectionStorage):
         for event in processes_events:
             normalized_event = processes_normalizer.normalize(event)
             if normalized_event is not None:
+                normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                 processes_events_normalized.append(normalized_event)
             else:
                 print(f"Failed to normalize Processes event: {event}")
@@ -118,12 +129,14 @@ def process_collection(storage: CollectionStorage):
                     for event in network_events[event_type]:
                         normalized_event = network_normalizer.normalize(event, event_type)
                         if normalized_event is not None:
+                            normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                             network_events_normalized.append(normalized_event)
                         else:
                             print(f"Failed to normalize Network event: {event}")
                 else:
                     normalized_event = network_normalizer.normalize(network_events[event_type], event_type)
                     if normalized_event is not None:
+                        normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                         network_events_normalized.append(normalized_event)
                     else:
                         print(f"Failed to normalize Network event: {network_events[event_type]}")
@@ -138,11 +151,13 @@ def process_collection(storage: CollectionStorage):
                 for registry_event in registry_events[registry_key]:
                     normalized_event = registry_normalizer.normalize(registry_event, registry_key)
                     if normalized_event is not None:
+                        normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                         registry_events_normalized.append(normalized_event)
             else:
                 if registry_events[registry_key] is not None:
                     normalized_event = registry_normalizer.normalize(registry_events[registry_key], registry_key)
                     if normalized_event is not None:
+                        normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                         registry_events_normalized.append(normalized_event)
         storage.save_channel('registry', registry_events_normalized)
 
@@ -152,12 +167,14 @@ def process_collection(storage: CollectionStorage):
         scheduled_tasks_normalizer = ScheduledTasksNormalizer()
         for event in scheduled_tasks_events:
             normalized_event = scheduled_tasks_normalizer.normalize(event)
-            if normalized_event is not None:
+            if normalized_event is not None: 
+                for ne in normalized_event:
+                    ne.is_probe = BaseNormalizer._is_probe(ne, probe_ips)
                 scheduled_tasks_events_normalized.extend(normalized_event)
             else:
                 print(f"Failed to normalize Scheduled Task event: {event}")
 
-            storage.save_channel('scheduled_tasks', scheduled_tasks_events_normalized)
+        storage.save_channel('scheduled_tasks', scheduled_tasks_events_normalized)
 
     apache_logs = payload.get('modules').get('web_logs').get('data', [])
     apache_logs_normalized = []
@@ -168,12 +185,12 @@ def process_collection(storage: CollectionStorage):
             for event in events:
                 normalized_event = apache_normalizer.normalize(event, event_type)
                 if normalized_event is not None:
+                    normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                     apache_logs_normalized.append(normalized_event)
                 else:
                     print(f"Failed to normalize Apache log event: {event}")
         storage.save_channel('web_logs', apache_logs_normalized)
 
-    summary = storage.load_summary()
     print(summary)
 
     storage.save_summary(

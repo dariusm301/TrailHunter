@@ -45,6 +45,7 @@ export function toElements(
     data: {
       id: n.id,
       label: n.label,
+      is_probe: n.is_probe,
       phase: n.fields.kill_chain,
       requires: n.requires,
       provides: n.provides,
@@ -176,6 +177,7 @@ export function toSwimlane(
         id: n.id,
         kind: 'finding',
         label: n.label,
+        is_probe: n.is_probe,
         phase: n.fields.kill_chain,
         fields: n.fields,
         actor: n.actor,

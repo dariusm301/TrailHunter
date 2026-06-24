@@ -55,11 +55,12 @@ class DetectionEngine:
                 try:
                     finding = rule.match(event)
                     if finding:
+                        finding.is_probe = resolve_is_probe(finding, events)
                         key = (event.id, rule.rule_id)
                         if key not in seen_event_rule:
                             seen_event_rule.add(key)
                             logon_id = resolve_logon_id(finding, events)
-                        
+
                             if logon_id:
                                 finding.requires.append(Capability("session_established", bind=("logon.id",), values=(logon_id,)))
                             findings.append(finding)
@@ -69,6 +70,8 @@ class DetectionEngine:
         for rule in self._aggregate:
             try:
                 results = rule.match(events_list)
+                for finding in results:
+                    finding.is_probe = resolve_is_probe(finding, events)
                 findings.extend(results)
             except Exception as e:
                 logger.warning(f"[{rule.rule_id}] aggregate error: {e}")
@@ -102,3 +105,10 @@ def resolve_logon_id(finding: DetectionFinding, all_events: dict[str, Normalized
                 return candidate.logon.id
     
     return None
+
+def resolve_is_probe(finding: DetectionFinding, all_events: dict[str, NormalizedEvent]) -> bool:
+    for event_id in finding.triggered_by:
+        event = all_events.get(event_id)
+        if event is not None and getattr(event, "is_probe", False):
+            return True
+    return False

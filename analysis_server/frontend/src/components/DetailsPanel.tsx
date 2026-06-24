@@ -70,27 +70,27 @@ function Section({ title, count, children }: { title: string; count?: number; ch
 
 function Row({ label, value, dot }: { label: string; value: ReactNode; dot?: string }) {
   return (
-    <div style={{ 
+    <div style={{
       display: 'grid',
-      gridTemplateColumns: 'minmax(120px, 35%) 1fr',  
-      gap: 12, 
-      padding: '6px 0', 
-      fontSize: 13, 
+      gridTemplateColumns: 'minmax(120px, 35%) 1fr',
+      gap: 12,
+      padding: '6px 0',
+      fontSize: 13,
       borderBottom: `1px solid ${HAIRLINE}`,
       alignItems: 'flex-start',
     }}>
-      <span style={{ 
+      <span style={{
         color: MUTED,
-        wordBreak: 'break-word',  
+        wordBreak: 'break-word',
         paddingTop: 1,
       }}>
         {label}
       </span>
-      <span style={{ 
-        color: TEXT, 
-        wordBreak: 'break-word', 
-        fontFamily: 'ui-monospace, monospace', 
-        display: 'flex', 
+      <span style={{
+        color: TEXT,
+        wordBreak: 'break-word',
+        fontFamily: 'ui-monospace, monospace',
+        display: 'flex',
         alignItems: 'flex-start',
         gap: 8,
         minWidth: 0,
@@ -101,7 +101,6 @@ function Row({ label, value, dot }: { label: string; value: ReactNode; dot?: str
     </div>
   )
 }
-
 
 function FieldTree({ obj, prefix = '' }: { obj: Record<string, unknown>; prefix?: string }) {
   const rows: ReactNode[] = []
@@ -134,15 +133,14 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
   }, [onClose])
 
   const open = node != null || edge != null
-
   const f = node?.fields ?? {}
   const severity = (f.severity ?? '').toLowerCase()
   const phase = f.kill_chain ?? 'unknown'
   const eventIds = node?.event_ids ?? []
-  
+  const isProbe = Boolean(node?.is_probe)
+
   const fusedSignals = f.fused_signals as string[] | undefined
   const hasFused = Array.isArray(fusedSignals) && fusedSignals.length > 1
-
   const groupedFused = useMemo(() => {
     if (!hasFused) return []
     const counts: Record<string, number> = {}
@@ -170,8 +168,11 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.3, wordBreak: 'break-word' }}>
                 {activeEventId ? 'Event details' : (node?.label ?? node?.id ?? edge?.relation)}
+                {!activeEventId && node && isProbe && (
+                  <span style={{ color: MUTED, fontWeight: 400 }}> (probe)</span>
+                )}
               </div>
-              
+
               {!activeEventId && node && (
                 <div style={{ fontSize: 12, color: MUTED, marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {severity && severity !== '—' && (
@@ -188,7 +189,6 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
               ×
             </button>
           </header>
-
           <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
             {activeEventId && eventsMap[activeEventId] ? (
               <div>
@@ -209,7 +209,15 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
             ) : node ? (
               <>
                 <Section title="General Information">
-                  <Row label="rule" value={f.rule} />
+                  <Row
+                    label="rule"
+                    value={
+                      <>
+                        {f.rule}
+                        {isProbe && <span style={{ color: MUTED }}> (probe)</span>}
+                      </>
+                    }
+                  />
                   <Row label="phase" value={f.kill_chain} dot={f.kill_chain && f.kill_chain !== '—' ? phaseColor(f.kill_chain) : undefined} />
                   <Row label="severity" value={f.severity} />
                   <Row label="timestamp" value={f.timestamp} />
@@ -217,17 +225,16 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                   <Row label="process" value={f.process} />
                   <Row label="source ip" value={f.source_ip} />
                 </Section>
-
                 {hasFused && (
                   <Section title="Fused Rules" count={fusedSignals.length}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {groupedFused.map((sig, idx) => (
-                        <div 
-                          key={idx} 
-                          style={{ 
-                            background: 'rgba(255, 255, 255, 0.03)', 
-                            border: `1px solid ${HAIRLINE}`, 
-                            borderRadius: 6, 
+                        <div
+                          key={idx}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: `1px solid ${HAIRLINE}`,
+                            borderRadius: 6,
                             padding: '8px 12px',
                             fontFamily: 'ui-monospace, monospace',
                             fontSize: 12,
@@ -241,11 +248,11 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                         >
                           <span>{sig.name}</span>
                           {sig.count > 1 && (
-                            <span style={{ 
-                              color: MUTED, 
-                              fontSize: 11, 
-                              background: 'rgba(255,255,255,0.08)', 
-                              padding: '2px 6px', 
+                            <span style={{
+                              color: MUTED,
+                              fontSize: 11,
+                              background: 'rgba(255,255,255,0.08)',
+                              padding: '2px 6px',
                               borderRadius: 4,
                               whiteSpace: 'nowrap'
                             }}>
@@ -257,7 +264,6 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                     </div>
                   </Section>
                 )}
-
                 {eventIds.length > 0 && (
                   <Section title="Associated Events" count={eventIds.length}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -265,7 +271,7 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                         const evFields = eventsMap[eid] || {}
                         const ts = String((evFields['@timestamp'] ?? evFields.timestamp) ?? '')
                         const action = String((evFields.event as any)?.action ?? evFields.action ?? eid)
-                        
+
                         return (
                           <button
                             key={eid}
@@ -286,7 +292,6 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                     </div>
                   </Section>
                 )}
-
                 <Section title="Capabilities">
                   {((node.requires ?? []).length > 0 || (node.provides ?? []).length > 0) ? (
                     <>
@@ -303,7 +308,6 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                     <span style={{ color: MUTED, fontSize: 13 }}>—</span>
                   )}
                 </Section>
-
                 <Section title="Fusion Key">
                   {(node.fusion_key ?? []).length === 0 ? (
                     <span style={{ color: MUTED, fontSize: 13 }}>—</span>
@@ -313,7 +317,6 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                     ))
                   )}
                 </Section>
-
                 <Section title="Node ID">
                   <div style={{ fontSize: 11, color: MUTED, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}>
                     {node.id}

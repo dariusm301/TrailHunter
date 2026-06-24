@@ -157,6 +157,7 @@ class NormalizedEvent(ECSModel):
     dns : DNSFields | None = None
     group: GroupFields | None = None
     powershell: PowerShellFields | None = None
+    is_probe: bool = False
 
 class CollectionSummary(ECSModel):
     collector_ip: dict[str, list[str]]

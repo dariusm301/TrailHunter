@@ -24,6 +24,7 @@ export interface NodeInfoData {
   label?: string
   kind?: string
   color?: string 
+  is_probe?: boolean
   phase?: string | null
   severity?: string
   fields?: NodeFields
@@ -172,6 +173,7 @@ export function NodeInfoPanel({ node, onClose }: Props) {
   const requires = node?.requires ?? []
   const provides = node?.provides ?? []
   const fusion = node?.fusion_key ?? []
+  const isProbe = Boolean(node?.is_probe)
   const severity = (node?.severity ?? f.severity ?? '').toLowerCase()
   const phase = node?.phase ?? f.kill_chain ?? 'unknown'
 
@@ -227,6 +229,7 @@ export function NodeInfoPanel({ node, onClose }: Props) {
                 }}
               >
                 {node.label ?? f.rule ?? node.id}
+                {isProbe && <span style={{ color: MUTED, fontWeight: 400 }}> (probe)</span>}
               </div>
               <div
                 style={{
@@ -277,7 +280,15 @@ export function NodeInfoPanel({ node, onClose }: Props) {
 
           <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
             <Section title="Details">
-              <Row label="rule" value={f.rule} />
+              <Row
+                label="rule"
+                value={
+                  <>
+                    {f.rule}
+                    {isProbe && <span style={{ color: MUTED }}> (probe)</span>}
+                  </>
+                }
+              />
               <Row label="timestamp" value={f.timestamp} />
               <Row label="user" value={f.user} />
               <Row label="process" value={f.process} />

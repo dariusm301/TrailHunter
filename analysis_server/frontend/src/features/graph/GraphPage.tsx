@@ -446,7 +446,10 @@ export default function GraphPage() {
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={S.detailTitle}>{n.label}</div>
+                        <div style={S.detailTitle}>
+                          {n.label}
+                          {n.is_probe && <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}> (probe)</span>}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--color-muted)', marginTop: 8 }}>
                         <span>{n.fields.kill_chain !== '—' ? n.fields.kill_chain : 'unknown phase'}</span>

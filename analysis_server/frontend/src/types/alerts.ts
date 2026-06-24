@@ -15,6 +15,7 @@ export interface DetectionFinding {
   tags: string[]
   event_count: number
   entities: Record<string, unknown>
+  is_probe: boolean
 }
 
 export interface DetectResult {

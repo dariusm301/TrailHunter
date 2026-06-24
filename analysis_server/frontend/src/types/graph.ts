@@ -30,6 +30,7 @@ export interface GraphNode {
   requires?: { name?: string; bind?: string[]; values?: string[] }[]
   provides?: { name?: string; bind?: string[]; values?: string[] }[]
   fusion_key?: (string | number)[][]
+  is_probe?: boolean
 }
 
 export interface GraphEdge {

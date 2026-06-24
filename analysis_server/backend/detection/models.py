@@ -99,6 +99,7 @@ class DetectionFinding(BaseModel):
     # Additional context
     extra: dict[str, Any] = {}
     entities: dict[str, Any] = {}
+    is_probe: bool = False
 
 
 

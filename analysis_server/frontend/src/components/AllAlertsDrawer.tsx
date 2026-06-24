@@ -40,6 +40,7 @@ type FindingItem = {
   tags: string[]
   event_count: number
   raw: DetectionFinding
+  is_probe: boolean
 }
 
 type Item = FindingItem
@@ -48,7 +49,7 @@ function findingToItem(f: DetectionFinding): FindingItem {
   return {
     kind: 'finding',
     id: f.id,
-    label: f.rule_name,
+    label: f.rule_name ,
     severity: f.severity,
     kill_chain_phase: f.kill_chain_phase ?? '',
     timestamp: f.timestamp ?? '',
@@ -58,6 +59,7 @@ function findingToItem(f: DetectionFinding): FindingItem {
     tags: f.tags,
     event_count: f.event_count,
     raw: f,
+    is_probe: f.is_probe ?? false,
   }
 }
 
@@ -145,6 +147,8 @@ function SidePanel({ item, onClose }: SidePanelProps) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.3, wordBreak: 'break-word' }}>
                 {item.label}
+                {item.is_probe && <span style={{ color: MUTED, fontWeight: 400 }}> (probe)</span>}
+
               </div>
               <div style={{ fontSize: 12, color: MUTED, marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {severity && severity !== '—' && (
@@ -175,7 +179,15 @@ function SidePanel({ item, onClose }: SidePanelProps) {
 
           <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
                 <Section title="General Information">
-                  <Row label="rule" value={item.raw.rule_name} />
+                  <Row 
+                    label="rule" 
+                    value={
+                      <>
+                        {item.raw.rule_name}
+                        {item.raw.is_probe && <span style={{ color: MUTED }}> (probe)</span>}
+                      </>
+                    } 
+                  />
                   <Row label="source" value={item.raw.source} />
                   <Row label="phase" value={item.kill_chain_phase|| '—'} dot={phase && phase !== '—' ? phaseColor(phase) : undefined} />
                   <Row label="severity" value={item.raw.severity} />
@@ -396,7 +408,10 @@ function FindingCard({ item, selected, onClick }: { item: FindingItem; selected:
       background: selected ? 'rgba(245,158,11,0.06)' : 'var(--color-surface)',
     }}>
       <div style={S.cardTop}>
-        <span style={S.cardTitle}>{item.label}</span>
+        <span style={S.cardTitle}>
+            {item.label}
+           {item.is_probe && <span style={S.probeTag}> (probe)</span>}
+        </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
           {item.technique_id && <span style={S.techniqueTag}>{item.technique_id}</span>}
           <span style={{ ...S.kindBadge, borderColor: 'rgba(245,158,11,0.4)', color: '#f59e0b' }}>finding</span>
@@ -426,6 +441,11 @@ function FindingCard({ item, selected, onClick }: { item: FindingItem; selected:
 
 
 const S: Record<string, React.CSSProperties> = {
+  probeTag: {
+    color: 'var(--color-muted)',
+    fontWeight: 400,
+    fontSize: 12,
+  },
   backdrop: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
     backdropFilter: 'blur(2px)', zIndex: 200,

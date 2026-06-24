@@ -107,7 +107,8 @@ class Correlator:
                 "event_ids": event_ids,
                 "requires": requires,
                 "provides": provides,
-                "fusion_key": fusion_key
+                "fusion_key": fusion_key,
+                "is_probe": getattr(finding, "is_probe", False),
             })
         edges = [
             {"source": s, "target": t, "relation": a.get("relation"),

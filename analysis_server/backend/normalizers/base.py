@@ -283,10 +283,8 @@ class BaseNormalizer(ABC):
         import shlex
         try:
             parts = shlex.split(command_line, posix=False)
-            # Strip outer quotes from each token
             return [p.strip('"') for p in parts if p.strip('"')]
         except ValueError:
-            # fallback: simple split on spaces
             return command_line.split()
 
     @staticmethod
@@ -295,3 +293,9 @@ class BaseNormalizer(ABC):
             return None
         task_name = task_name.replace("'", "").replace("\\", "")
         return task_name.strip().lower() or None
+    
+    @staticmethod
+    def _is_probe(event: NormalizedEvent, probe_ips: set[str]) -> bool:
+        if event.source and event.destination:
+            return event.source.ip in probe_ips or event.destination.ip in probe_ips
+        return False
