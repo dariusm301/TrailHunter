@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from config import COLLECTOR_DIR
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

@@ -1,10 +1,10 @@
 param(
-    $ServerUrl = "http://172.28.112.1:8000",
+    $ServerUrl = "http://172.16.0.1:8000",
     $TimeRangeHours = 48,
     $Token = $null
 )
 $Hostname = $env:COMPUTERNAME
-$CollectionTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+$CollectionTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $modules = @(
     "windows/Get-WinLogs.ps1"
     "windows/Get-Processes.ps1"
@@ -106,6 +106,13 @@ try {
 
     Write-Host "[+] Data sent succesfully" -ForegroundColor Green
     Write-Host "[+] Server response: $($response.status)" -ForegroundColor Green
+    if ($response.forwarded_to_analysis_server) {
+        Write-Host "[+] Forwarded to analysis server" -ForegroundColor Green
+    }
+    else {
+        Write-Host "[!] NOT forwarded to analysis server: $($response.forward_error)" -ForegroundColor Yellow
+    }
+
     Write-Host "[*] Collection complete." -ForegroundColor Green
 }
 catch {
