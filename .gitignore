@@ -22,7 +22,6 @@ teste
 *.json
 get*
 *test*
-*.xml
 
 *.zip 
 collections/

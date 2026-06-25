@@ -227,6 +227,51 @@ class SuspiciousInboundSSHRule(PerEventRule):
             extra={"remote_ip": dst_ip, "process": "sshd"}
         )
 
+class WebServerInboundConnectionRule(PerEventRule):
+    rule_id = "NET_WEBSERVER_INBOUND_001"
+
+    _WEB_SERVER_PROCESSES = re.compile(
+        r"^(httpd|apache|apache2|nginx|w3wp|php-cgi)(\.exe)?$",
+        re.IGNORECASE
+    )
+
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        if not (event.network and event.process):
+            return None
+
+        process = _process_name(event)
+        if not self._WEB_SERVER_PROCESSES.match(process):
+            return None
+
+        state = (event.event.action or "").lower()
+        if "listen" in state or "bound" in state:
+            return None  
+
+        src_ip = _src_ip(event)
+        if src_ip is None or src_ip.startswith("127.") or src_ip.startswith("::1"):
+            return None
+
+        return DetectionFinding(
+            rule_id=self.rule_id,
+            rule_name="Web Server Inbound Connection",
+            rule_type="per_event",
+            severity=Severity.INFO,        
+            confidence=0.95,              
+            technique_id="T1190",
+            technique_name="Exploit Public-Facing Application",
+            tactic=MitreTactic.INITIAL_ACCESS,
+            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            tags=["provenance", "web", "network", "anchor"],
+            source="network",
+            description=f"Inbound connection to '{process}' from {src_ip}",
+            timestamp=_ts(event),
+            triggered_by=[event.id],
+            extra={
+                "process": process,
+                "pid": event.process.pid if event.process else None,
+                "src_ip": src_ip,
+            }
+        )
 
 
 class ArpPoisoningRule(AggregateRule):
@@ -269,6 +314,8 @@ class ArpPoisoningRule(AggregateRule):
             ))
 
         return findings
+
+    
 
 def get_connection_rules() -> tuple[list[PerEventRule], list[AggregateRule]]:
     per_event = [

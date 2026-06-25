@@ -74,8 +74,10 @@ class SysmonNormalizer(BaseNormalizer):
     def _parse_3(self, raw: dict) -> NormalizedEvent:
         ed = raw.get("event_data", {})
         username, domain = self._extract_username_and_domain(ed.get("User", ""))
+        initiated = ed.get("Initiated", "").lower() == "true"
 
         return NormalizedEvent(
+            timestamp=self._parse_time(raw.get("time_created")),
             event=EventFields(
                 action="network_connection",
                 category="network",
@@ -97,18 +99,18 @@ class SysmonNormalizer(BaseNormalizer):
                 name=self._normalize_process_name(ed.get("Image")),
                 entity_id=self._clean(ed.get("ProcessGuid")),
             ),
+            network=NetworkFields(
+                transport=self._clean(ed.get("Protocol")),
+                direction="egress" if initiated else "ingress",
+            ),
             source=SourceFields(
                 ip=self._normalize_ip(ed.get("SourceIp")),
                 port=self._normalize_port(ed.get("SourcePort")),
             ),
             destination=DestinationFields(
                 ip=self._normalize_ip(ed.get("DestinationIp")),
-                domain=self._normalize_hostname(ed.get("DestinationHostname")),
                 port=self._normalize_port(ed.get("DestinationPort")),
-            ),
-            network=NetworkFields(
-                transport=self._clean(ed.get("Protocol")),
-                direction="egress" if ed.get("Initiated") == "true" else "ingress",
+                domain=self._normalize_hostname(ed.get("DestinationHostname")),
             ),
             winlog=WinLogsFields(
                 channel="Microsoft-Windows-Sysmon/Operational",

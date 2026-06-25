@@ -1,24 +1,20 @@
 #Requires -RunAsAdministrator
-
 $ErrorActionPreference = "Stop"
 
 function Write-Section {
     param([string]$Title)
     Write-Host "`n=== $Title ===" -ForegroundColor Cyan
 }
-
 function Write-Ok {
     param([string]$Msg)
     Write-Host "  [OK] $Msg" -ForegroundColor Green
 }
-
 function Write-Warn2 {
     param([string]$Msg)
     Write-Host "  [!] $Msg" -ForegroundColor Yellow
 }
 
 Write-Section "Security Audit Policy"
-
 auditpol /set /subcategory:"Process Creation" /success:enable /failure:enable | Out-Null
 Write-Ok "Process Creation auditing activated (Event ID 4688)"
 
@@ -46,7 +42,6 @@ Write-Ok "Special Logon auditing enabled (4672)"
 auditpol /set /subcategory:"Audit Policy Change" /success:enable /failure:enable | Out-Null
 Write-Ok "Audit Policy Change auditing enabled (4719)"
 
-
 Write-Section "PowerShell Logging"
 
 $psPolicyBase = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell"
@@ -55,25 +50,16 @@ $sblPath = "$psPolicyBase\ScriptBlockLogging"
 New-Item -Path $sblPath -Force | Out-Null
 New-ItemProperty -Path $sblPath -Name "EnableScriptBlockLogging" -Value 1 -PropertyType DWord -Force | Out-Null
 New-ItemProperty -Path $sblPath -Name "EnableScriptBlockInvocationLogging" -Value 1 -PropertyType DWord -Force | Out-Null
-Write-Ok "Script Block Logging enabled (Event ID 4104)"
+Write-Ok "Script Block Logging enabled (Event ID 4104, 4105, 4106)"
 
 $mlPath = "$psPolicyBase\ModuleLogging"
 New-Item -Path $mlPath -Force | Out-Null
 New-ItemProperty -Path $mlPath -Name "EnableModuleLogging" -Value 1 -PropertyType DWord -Force | Out-Null
 New-Item -Path "$mlPath\ModuleNames" -Force | Out-Null
-New-ItemProperty -Path "$mlPath\ModuleNames" -Name "*" -Value "*" -PropertyType String -Force | Out-Null
-Write-Ok "Module Logging enabled (Event ID 4103, all modules)"
-
-$transcriptPath = "$psPolicyBase\Transcription"
-$transcriptDir = "C:\PSTranscripts"
-if (-not (Test-Path $transcriptDir)) {
-    New-Item -Path $transcriptDir -ItemType Directory -Force | Out-Null
-}
-New-Item -Path $transcriptPath -Force | Out-Null
-New-ItemProperty -Path $transcriptPath -Name "EnableTranscripting" -Value 1 -PropertyType DWord -Force | Out-Null
-New-ItemProperty -Path $transcriptPath -Name "EnableInvocationHeader" -Value 1 -PropertyType DWord -Force | Out-Null
-New-ItemProperty -Path $transcriptPath -Name "OutputDirectory" -Value $transcriptDir -PropertyType String -Force | Out-Null
-Write-Ok "PowerShell Transcription enabled (output: $transcriptDir)"
+New-ItemProperty -Path "$mlPath\ModuleNames" -Name "1" -Value "Microsoft.PowerShell.Management" -PropertyType String -Force | Out-Null
+New-ItemProperty -Path "$mlPath\ModuleNames" -Name "2" -Value "Microsoft.PowerShell.Utility" -PropertyType String -Force | Out-Null
+New-ItemProperty -Path "$mlPath\ModuleNames" -Name "3" -Value "Microsoft.PowerShell.Security" -PropertyType String -Force | Out-Null
+Write-Ok "Module Logging enabled (Event ID 4103, restricted to 3 core modules)"
 
 wevtutil set-log "Microsoft-Windows-PowerShell/Operational" /enabled:true /maxsize:104857600 | Out-Null
 Write-Ok "Microsoft-Windows-PowerShell/Operational log enabled, max size 100MB"
@@ -82,12 +68,10 @@ wevtutil set-log "Windows PowerShell" /enabled:true | Out-Null
 Write-Ok "Windows PowerShell (classic) log enabled"
 
 Write-Section "WMI Activity Logging"
-
 wevtutil set-log "Microsoft-Windows-WMI-Activity/Operational" /enabled:true /maxsize:104857600 | Out-Null
 Write-Ok "Microsoft-Windows-WMI-Activity/Operational log enabled, max size 100MB"
 
 Write-Section "Task Scheduler Logging"
-
 wevtutil set-log "Microsoft-Windows-TaskScheduler/Operational" /enabled:true /maxsize:52428800 | Out-Null
 Write-Ok "Microsoft-Windows-TaskScheduler/Operational log enabled, max size 50MB"
 
@@ -95,11 +79,7 @@ auditpol /set /subcategory:"Other Object Access Events" /success:enable /failure
 Write-Ok "Other Object Access Events auditing enabled (4698-4702, scheduled tasks)"
 
 Write-Section "Security Event Log Size"
-
 wevtutil set-log "Security" /maxsize:524288000 | Out-Null
 Write-Ok "Security log maximum size set to 500MB"
 
-
-Write-Host "`nDone. You can quickly verify with:" -ForegroundColor Cyan
-Write-Host '  auditpol /get /category:*' -ForegroundColor Gray
-Write-Host '  Get-WinEvent -ListLog "Microsoft-Windows-PowerShell/Operational","Microsoft-Windows-WMI-Activity/Operational","Microsoft-Windows-TaskScheduler/Operational"' -ForegroundColor Gray
+Write-Host "`nDone. " -ForegroundColor Cyan

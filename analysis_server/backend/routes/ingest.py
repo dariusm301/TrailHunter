@@ -34,4 +34,4 @@ async def collect_data_web(
         db_session=db_session,
     )
 
-    return {"status": "accepted", "hash": x_collection_hash, "collection_id": collection_storage.collection_id}
+    return {"status": "accepted", "hash": x_collection_hash, "collection_id": collection_storage.collection_id, "forwarded_to_analysis_server": True}

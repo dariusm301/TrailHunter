@@ -1,0 +1,81 @@
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <CheckRevocation/>
+  <EventFiltering>
+
+    <RuleGroup name="" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <Image condition="end with">conhost.exe</Image>
+        <Image condition="end with">WmiPrvSE.exe</Image>
+        <Image condition="end with">SearchIndexer.exe</Image>
+        <Image condition="end with">SearchProtocolHost.exe</Image>
+        <Image condition="end with">backgroundTaskHost.exe</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <Image name="technique_id=T1190,technique_name=Exploit Public-Facing Application" condition="image">httpd.exe</Image>
+        <Image name="technique_id=T1190,technique_name=Exploit Public-Facing Application" condition="image">apache.exe</Image>
+        <Image name="technique_id=T1059,technique_name=Command and Scripting Interpreter" condition="image">cmd.exe</Image>
+        <Image name="technique_id=T1059.001,technique_name=PowerShell" condition="image">powershell.exe</Image>
+        <Image name="technique_id=T1018,technique_name=Remote System Discovery" condition="image">net.exe</Image>
+        <Image name="technique_id=T1018,technique_name=Remote System Discovery" condition="image">net1.exe</Image>
+        <DestinationPort name="technique_id=T1571,technique_name=Non-Standard Port" condition="is">4444</DestinationPort>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <ProcessTerminate onmatch="exclude"/>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <Signed condition="is">false</Signed>
+      </ImageLoad>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude"/>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage name="technique_id=T1003.001,technique_name=LSASS Memory" condition="end with">lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">\xampp\htdocs\</TargetFilename>
+        <TargetFilename condition="contains">\Important\</TargetFilename>
+        <TargetFilename condition="contains">\Windows\Temp\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Temp\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject name="technique_id=T1547.001,technique_name=Registry Run Keys" condition="contains">\Run</TargetObject>
+        <TargetObject name="technique_id=T1543.003,technique_name=Windows Service" condition="contains">\Services\</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <QueryName condition="end with">.local</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <PipeEvent onmatch="exclude"/>
+    </RuleGroup>
+
+    <RuleGroup name="" groupRelation="or">
+      <FileDeleteDetected onmatch="include">
+        <TargetFilename name="technique_id=T1485,technique_name=Data Destruction" condition="begin with">C:\Important\</TargetFilename>
+      </FileDeleteDetected>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>
