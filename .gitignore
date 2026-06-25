@@ -1,9 +1,7 @@
-__pycache__
-.venv
-*.pyc
-*.pyo
-*.pyd
+attack_logs/
+.venv/
+__pycache__/
 data/
 malware/
-wordlists/*.txt
-*.jpg
+
+husky.jpg_original
