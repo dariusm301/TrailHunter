@@ -52,16 +52,17 @@ class ProbeToken(Base):
     single_use = Column(Boolean, default=False)
     token_type = Column(String, nullable=False, default="hardware") 
     
+    collections = relationship("Collection", back_populates="probe_token")
     user = relationship("User", back_populates="probe_tokens")
 
 class Collection(Base):
     __tablename__ = "collections"
-
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     hostname = Column(String, nullable=False)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     storage_path = Column(String, nullable=True)
     created_at = Column(UTCDateTime(), default=datetime.now(timezone.utc))
-
+    token_id = Column(String, ForeignKey("probe_tokens.id"), nullable=True) 
+    probe_token = relationship("ProbeToken", back_populates="collections")
     user = relationship("User", back_populates="collections")

@@ -11,7 +11,7 @@ class EventFields(ECSModel):
     category : str | None = None
     code : str | None = None
     created : datetime | None = None
-    dataset : str | None = None # Example: windows.X, web.Y
+    dataset : str | None = None 
     module : str | None = None
     original : bytes | None = None
     provider : str | None = None
@@ -98,6 +98,7 @@ class HTTPFields(ECSModel):
     request_method: str | None = None
     response_status_code: int | None = None
     user_agent : str | None = None
+    request_body : str | None = None
 
 class UrlFields(ECSModel):
     original: str | None = None
@@ -160,5 +161,5 @@ class NormalizedEvent(ECSModel):
     is_probe: bool = False
 
 class CollectionSummary(ECSModel):
-    collector_ip: dict[str, list[str]]
+    collector_ip: dict[str, list[str]] | None = None
     sha256: str | None = None
