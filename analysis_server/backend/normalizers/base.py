@@ -296,6 +296,8 @@ class BaseNormalizer(ABC):
     
     @staticmethod
     def _is_probe(event: NormalizedEvent, probe_ips: set[str]) -> bool:
+        if probe_ips is None or probe_ips == []:
+            return False
         if event.source and event.destination:
             return event.source.ip in probe_ips or event.destination.ip in probe_ips
         return False

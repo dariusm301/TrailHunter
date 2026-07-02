@@ -2,17 +2,17 @@ from normalizers.base import BaseNormalizer
 from models.events import *
 from datetime import datetime, timezone
 
+from normalizers.helpers.dumpio_parser import DumpIOParser, DumpioRequest
+
 
 class ApacheNormalizer(BaseNormalizer):
+    def __init__(self):
+        self._dumpio_parser = DumpIOParser()
 
-    # ─────────────────────────────────────────────
-    # Access Log
-    # ─────────────────────────────────────────────
     def _normalize_access_log(self, raw: dict) -> NormalizedEvent:
         ts = datetime.strptime(
             raw.get("timestamp"), "%d/%b/%Y:%H:%M:%S %z"
         ).astimezone(timezone.utc)
-
         return NormalizedEvent(
             timestamp=ts,
             event=EventFields(
@@ -42,15 +42,11 @@ class ApacheNormalizer(BaseNormalizer):
             ),
         )
 
-    # ─────────────────────────────────────────────
-    # Error Log
-    # ─────────────────────────────────────────────
     def _normalize_error_log(self, raw: dict) -> NormalizedEvent:
         address, port = self._parse_host_port(raw.get("client"))
         ts = datetime.strptime(
             raw.get("timestamp"), "%a %b %d %H:%M:%S.%f %Y"
         ).replace(tzinfo=timezone.utc)
-
         return NormalizedEvent(
             timestamp=ts,
             event=EventFields(
@@ -69,10 +65,47 @@ class ApacheNormalizer(BaseNormalizer):
             ),
         )
 
-    def normalize(self, raw: dict, log_type: str) -> NormalizedEvent:
+    def _normalize_dumpio(self, raw: DumpioRequest) -> NormalizedEvent:
+        
+        body = raw.body.strip() if raw.body else None
+        return NormalizedEvent(
+            timestamp=raw.timestamp_start,
+            event=EventFields(
+                action="apache_dumpio_request",
+                category="web",
+                dataset="apache.dumpio",
+                module="apache",
+                original="".join(raw.raw_chunks).encode("utf-8"),
+                created=raw.timestamp_end,
+            ),
+            network=NetworkFields(
+                protocol="http",
+                transport="tcp",
+                direction="inbound",
+            ),
+            source=SourceFields(
+                ip=self._normalize_ip(raw.client_ip),
+                port=self._normalize_port(raw.client_port),
+            ),
+            http=HTTPFields(
+                request_method=self._clean(raw.method),
+                request_body=body or None,
+            ),
+            url=UrlFields(
+                path=self._clean(raw.path),
+            ),
+        )
+
+    def normalize(self, raw: dict, log_type: str) -> NormalizedEvent | None:
+        
         if "access" in log_type:
             return self._normalize_access_log(raw)
         elif "error" in log_type:
+            if self._dumpio_parser.is_dumpio_line(raw):
+                request = self._dumpio_parser.feed(raw)
+                if request is None:
+                    return None
+                return self._normalize_dumpio(request)
             return self._normalize_error_log(raw)
         else:
             raise ValueError(f"Unsupported log type: {log_type}")

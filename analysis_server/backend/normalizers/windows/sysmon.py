@@ -482,3 +482,50 @@ class SysmonNormalizer(BaseNormalizer):
                 provider_name="Microsoft-Windows-Sysmon",
             ),
         )
+    
+    # ─────────────────────────────────────────────
+    # Event 26 — File Delete Detected
+    # ─────────────────────────────────────────────
+    def _parse_26(self, raw: dict) -> NormalizedEvent:
+        ed = raw.get("event_data", {})
+        username, domain = self._extract_username_and_domain(ed.get("User", ""))
+        return NormalizedEvent(
+            event=EventFields(
+                action="file_deleted",
+                category="file",
+                code="26",
+                created=self._parse_time(raw.get("time_created")),
+                dataset="windows_sysmon",
+                module="sysmon",
+                severity=2,
+                original=raw.get("message", "").encode("utf-8"),
+                provider="Microsoft-Windows-Sysmon",
+            ),
+            user=UserFields(
+                name=self._normalize_username(username),
+                domain=self._normalize_domain(domain),
+            ),
+            process=ProcessFields(
+                pid=self._normalize_pid(ed.get("ProcessId")),
+                executable=self._normalize_executable(ed.get("Image")),
+                name=self._normalize_process_name(ed.get("Image")),
+                entity_id=self._clean(ed.get("ProcessGuid")),
+            ),
+            file=FileFields(
+                path=self._clean(ed.get("TargetFilename")),
+                name=self._normalize_filename(ed.get("TargetFilename")),
+            ),
+            logon=LogonFields(
+                id=self._normalize_logon_id(ed.get("LogonId")),
+            ),
+            winlog=WinLogsFields(
+                channel="Microsoft-Windows-Sysmon/Operational",
+                event_id=26,
+                provider_name="Microsoft-Windows-Sysmon",
+                extra={
+                    "hashes": self._clean(ed.get("Hashes")),
+                    "is_executable": self._clean(ed.get("IsExecutable")),
+                    "archived": self._clean(ed.get("Archived")),
+                },
+            ),
+        )
