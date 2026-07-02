@@ -25,6 +25,7 @@ export interface GraphNode {
     events?: string
     source_ip?: string | null
     fused_signals?: string | null
+    logon_id?: string | null
   }
   event_ids?: string[]
   requires?: { name?: string; bind?: string[]; values?: string[] }[]

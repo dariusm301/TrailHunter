@@ -35,12 +35,15 @@ export interface IngestResponse {
 export function ingestProbePackage(
   payloadFile: File,
   hash: string,
-  summaryJsonString: string,
+  summaryJsonString?: string,
 ): Promise<IngestResponse> {
-  return apiUploadRaw<IngestResponse>('/ingest', payloadFile, {
+  const headers: Record<string, string> = {
     'X-Collection-Hash': hash,
-    'X-Collection-Summary': summaryJsonString,
-  })
+  }
+  if (summaryJsonString) {
+    headers['X-Collection-Summary'] = summaryJsonString
+  }
+  return apiUploadRaw<IngestResponse>('/ingest', payloadFile, headers)
 }
 
 export function runDetection(collectionId: string): Promise<{ status: string }> {
@@ -89,4 +92,29 @@ export async function pollCorrelation(collectionId: string): Promise<Correlation
   } catch {
     throw new Error(`Invalid JSON: ${text.slice(0, 200)}`)
   }
+}
+
+export interface CollectionSummary {
+  hostname?: string
+  collected_at?: string
+  os_version?: string
+  sha256?: string
+  size_bytes?: number
+  collector_ip?: Record<string, string[]>
+  token_id?: string
+  token_name?: string
+  token_type?: string
+  event_counts?: Record<string, number>
+  hashes?: Record<string, string>
+  finding_counts?: Record<string, number>
+  max_severity?: string
+  actor_count?: number
+  probe?: boolean
+}
+
+export async function fetchCollectionSummary(collectionId: string): Promise<CollectionSummary | null> {
+  const res = await apiFetch(`/collections/${encodeURIComponent(collectionId)}/summary`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Failed to fetch summary: ${res.status}`)
+  return res.json()
 }

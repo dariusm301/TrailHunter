@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiDelete } from './client'
+import { apiGet, apiPost, apiDelete, apiFetch } from './client'
 
 export interface ProbeToken {
   id: string
@@ -40,4 +40,8 @@ export function createProbeToken(req: CreateProbeTokenRequest): Promise<CreatePr
 
 export function revokeProbeToken(tokenId: string): Promise<void> {
   return apiDelete<void>(`/probes/tokens/${tokenId}`)
+}
+
+export async function deleteProbeToken(id: string): Promise<void> {
+  await apiFetch(`/probes/tokens/${id}/permanent`, { method: 'DELETE' })
 }

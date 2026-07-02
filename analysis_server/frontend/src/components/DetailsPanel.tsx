@@ -224,6 +224,7 @@ export function DetailsPanel({ node, edge, eventsMap, onClose }: Props) {
                   <Row label="user" value={f.user} />
                   <Row label="process" value={f.process} />
                   <Row label="source ip" value={f.source_ip} />
+                  <Row label="logon id" value={f.logon_id} />
                 </Section>
                 {hasFused && (
                   <Section title="Fused Rules" count={fusedSignals.length}>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { listProbeTokens, createProbeToken, revokeProbeToken, type ProbeToken } from '@/api/probeTokens'
+import { listProbeTokens, createProbeToken, revokeProbeToken, deleteProbeToken, type ProbeToken } from '@/api/probeTokens'
 import logo from '@/assets/logo.svg'
 import AccountMenu from '@/components/AccountMenu'
 
@@ -46,6 +46,12 @@ export function ProbeTokensPage() {
     refresh()
   }
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Permanently delete this token? This action cannot be undone.')) return
+    await deleteProbeToken(id)
+    refresh()
+  }
+
   return (
     <div style={S.root}>
       <header style={S.header}>
@@ -55,7 +61,6 @@ export function ProbeTokensPage() {
         </div>
         <AccountMenu />
       </header>
-
       <main style={S.main}>
         <div style={S.actionRow}>
           <h1 style={S.title}>Probe Tokens</h1>
@@ -63,10 +68,8 @@ export function ProbeTokensPage() {
             <span style={S.plusIcon}>+</span> New token
           </button>
         </div>
-
         {error && <div style={S.empty}>Error: {error}</div>}
         {loading && <div style={S.empty}>Loading...</div>}
-
         {!loading && tokens.length === 0 ? (
           <div style={S.empty}>You do not have any probe tokens yet.</div>
         ) : !loading && (
@@ -104,11 +107,16 @@ export function ProbeTokensPage() {
                       </span>
                     </td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
-                      {!t.revoked && (
-                        <button onClick={() => handleRevoke(t.id)} style={S.revokeBtn}>
-                          Revoke
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                        {!t.revoked && (
+                          <button onClick={() => handleRevoke(t.id)} style={S.revokeBtn}>
+                            Revoke
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(t.id)} style={S.deleteBtn}>
+                          Delete
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -117,7 +125,6 @@ export function ProbeTokensPage() {
           </table>
         )}
       </main>
-
       {showCreateForm && (
         <CreateTokenModal
           onClose={() => setShowCreateForm(false)}
@@ -128,7 +135,6 @@ export function ProbeTokensPage() {
           }}
         />
       )}
-
       {newToken && (
         <RevealTokenModal
           token={newToken.token}
@@ -193,7 +199,6 @@ function CreateTokenModal({
     <div style={S.modalOverlay}>
       <div style={S.modalContent}>
         <h2 style={S.modalTitle}>New probe token</h2>
-
         <label style={S.label}>Type</label>
         <div style={S.typeToggle}>
           <button
@@ -211,7 +216,6 @@ function CreateTokenModal({
             Software (network)
           </button>
         </div>
-
         <label style={S.label}>Name</label>
         <input
           style={S.input}
@@ -219,7 +223,6 @@ function CreateTokenModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-
         {tokenType === 'hardware' ? (
           <>
             <label style={S.label}>Device identifier (optional)</label>
@@ -229,7 +232,6 @@ function CreateTokenModal({
               value={deviceIdentifier}
               onChange={(e) => setDeviceIdentifier(e.target.value)}
             />
-
             <label style={S.label}>Expiration</label>
             <select
               style={{ ...S.input, marginBottom: 20 }}
@@ -251,7 +253,6 @@ function CreateTokenModal({
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
             />
-
             <label style={S.label}>Valid for</label>
             <select
               style={{ ...S.input, marginBottom: 6 }}
@@ -266,9 +267,7 @@ function CreateTokenModal({
             <p style={S.hint}>Single-use — invalidated after the first successful collection, or when it expires.</p>
           </>
         )}
-
         {error && <p style={S.modalError}>{error}</p>}
-
         <div style={S.modalActions}>
           <button onClick={onClose} style={S.modalCancelBtn} disabled={submitting}>
             Cancel
@@ -322,7 +321,6 @@ function RevealTokenModal({
             ? ' Copy it now and enter it into the probe configuration.'
             : ' Copy the command and run it through the WinRM/SSH session on the target.'}
         </p>
-
         {tokenType === 'software' && (
           <>
             <label style={S.label}>Collection command</label>
@@ -332,10 +330,8 @@ function RevealTokenModal({
             </button>
           </>
         )}
-
         <label style={S.label}>Raw token</label>
         <div style={S.tokenBox}>{token}</div>
-
         <div style={S.modalActions}>
           <button onClick={handleCopyToken} style={S.modalCancelBtn}>
             {copiedToken ? 'Copied!' : 'Copy token'}
@@ -385,6 +381,11 @@ const S: Record<string, any> = {
     expired: { color: '#f59e0b', borderColor: '#f59e0b' },
   },
   revokeBtn: {
+    background: 'transparent', border: 'none', color: '#f87171',
+    cursor: 'pointer', fontSize: 12, textDecoration: 'underline', padding: 0,
+    opacity: 0.7,
+  },
+  deleteBtn: {
     background: 'transparent', border: 'none', color: '#ef4444',
     cursor: 'pointer', fontSize: 12, textDecoration: 'underline', padding: 0,
   },

@@ -15,7 +15,6 @@ import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
 import logo from '@/assets/logo.svg'
 import AccountMenu from '@/components/AccountMenu'
 
-
 const SEV_ORDER = ['low', 'medium', 'high', 'critical'] as const
 type Severity = typeof SEV_ORDER[number]
 const PHASES = [
@@ -57,13 +56,11 @@ const EMPTY_GRAPH: CorrelationGraph = { nodes: [], edges: [], actor_count: 0, co
 function eventMatches(fields: EventFields, q: string): boolean {
   return collectStrings(fields).some((s) => s.toLowerCase().includes(q))
 }
-
 interface Selected { kind: 'node' | 'edge'; id: string }
 
 export default function GraphPage() {
   const { collectionId } = useParams<{ collectionId: string }>()
   const navigate = useNavigate()
-
   useEffect(() => {
     if (!collectionId) navigate('/scans')
   }, [collectionId, navigate])
@@ -121,11 +118,9 @@ export default function GraphPage() {
       setProcessingAction(null)
     }
   }
-
   const handleCorrelate = () => {
     recorrelate()
   }
-
   const handleDelete = async () => {
     setProcessingAction('delete')
     try {
@@ -137,9 +132,7 @@ export default function GraphPage() {
       setShowDeleteModal(false)
     }
   }
-
   const barAction = processingAction ?? (loading ? 'correlate' : null)
-
   const toggleSev = (v: string) => setSevFilters((prev) => {
     const next = new Set(prev); next.has(v) ? next.delete(v) : next.add(v); return next
   })
@@ -150,17 +143,19 @@ export default function GraphPage() {
 
   const { realActors, isolatedNodes } = useMemo(() => {
     const map = new Map<number, GraphNode[]>()
+    const isolated: GraphNode[] = []
     for (const n of safeNodes) {
-      if (isCollector(n) || n.actor == null) continue
+      if (isCollector(n)) continue
+      if (n.actor == null) {
+        isolated.push(n)
+        continue
+      }
       const arr = map.get(n.actor) ?? []
       arr.push(n)
       map.set(n.actor, arr)
     }
-    const realActors: { id: number; nodes: GraphNode[]; linked: boolean; ip: string }[] = []
-    const isolatedNodes: GraphNode[] = []
+    const actors: { id: number; nodes: GraphNode[]; ip: string }[] = []
     for (const [id, nodes] of map.entries()) {
-      const ids = new Set(nodes.map((n) => n.id))
-      const internalEdges = safeEdges.filter((e) => ids.has(e.source) && ids.has(e.target))
       const sortedBySeverity = [...nodes].sort((a, b) => {
         const idxA = SEV_ORDER.indexOf((a.fields.severity || '').toLowerCase() as Severity)
         const idxB = SEV_ORDER.indexOf((b.fields.severity || '').toLowerCase() as Severity)
@@ -168,16 +163,12 @@ export default function GraphPage() {
       })
       const nodeWithIp = sortedBySeverity.find((n) => n.fields && n.fields.source_ip != null)
       const ip = nodeWithIp ? String(nodeWithIp.fields.source_ip) : `ID: ${id}`
-      if (internalEdges.length >= 3) {
-        realActors.push({ id, nodes, linked: true, ip })
-      } else {
-        isolatedNodes.push(...nodes)
-      }
+      actors.push({ id, nodes, ip })
     }
-    realActors.sort((a, b) => a.id - b.id)
-    isolatedNodes.sort(byTime)
-    return { realActors, isolatedNodes }
-  }, [safeNodes, isCollector, safeEdges])
+    actors.sort((a, b) => a.id - b.id)
+    isolated.sort(byTime)
+    return { realActors: actors, isolatedNodes: isolated }
+  }, [safeNodes, isCollector])
 
   const effectiveActor = useMemo(() => {
     if (selectedActor != null) {
@@ -205,6 +196,7 @@ export default function GraphPage() {
     [safeGraph, isCollector, effectiveActor],
   )
   const collectorElements = useMemo(() => toSwimlane(safeGraph, isCollector), [safeGraph, isCollector])
+
   const alertNodes = effectiveActor === 'general' ? isolatedNodes : effectiveActorObj?.nodes ?? []
 
   const availableSevs = useMemo(() => {
@@ -240,14 +232,12 @@ export default function GraphPage() {
       return true
     })
   }, [alertNodes, alertSearch, sevFilters, phaseFilters, eventsMap])
-
   const hasAlertFilters = alertSearch.trim() !== '' || sevFilters.size > 0 || phaseFilters.size > 0
 
   const selectedNode = selected?.kind === 'node' ? safeNodes.find((n) => n.id === selected.id) : undefined
   const selectedEdge = selected?.kind === 'edge'
     ? safeEdges.find((e) => `${e.source}->${e.target}:${e.relation}:${e.cap ?? ''}` === selected.id)
     : undefined
-
   const allAlertsTotal = detectResult?.total_findings ?? 0
 
   if (loading && !data) {
@@ -257,7 +247,30 @@ export default function GraphPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Link to="/scans" style={S.back}>← Scans</Link>
             <img src={logo} alt="TrailHunter" style={{ height: 28 }} />
-            {collectionId && <span style={S.meta}>{collectionId}</span>}
+            {collectionId && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={S.meta}>{collectionId}</span>
+                  <Link
+                    to={`/scans/${collectionId}/summary`}
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 11,
+                      color: 'var(--color-muted)',
+                      textDecoration: 'none',
+                      padding: '3px 8px',
+                      borderRadius: 5,
+                      border: '1px solid var(--color-line)',
+                      background: 'transparent',
+                      letterSpacing: '0.06em',
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-line)')}
+                  >
+                    SUMMARY
+                  </Link>
+                </div>
+              )}
           </div>
         </header>
         <div style={S.body}>
@@ -269,7 +282,6 @@ export default function GraphPage() {
       </div>
     )
   }
-
   if (error && !data) {
     return (
       <div style={S.root}>
@@ -292,7 +304,29 @@ export default function GraphPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Link to="/scans" style={S.back}>← Scans</Link>
           <img src={logo} alt="TrailHunter" style={{ height: 45 }} />
-          {collectionId && <span style={S.meta}>{collectionId}</span>}
+          {collectionId && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={S.meta}>{collectionId}</span>
+              <Link
+                to={`/scans/${collectionId}/summary`}
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  color: 'var(--color-muted)',
+                  textDecoration: 'none',
+                  padding: '3px 8px',
+                  borderRadius: 5,
+                  border: '1px solid var(--color-line)',
+                  background: 'transparent',
+                  letterSpacing: '0.06em',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-line)')}
+              >
+                SUMMARY
+              </Link>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <CollectionActionBar
@@ -331,9 +365,13 @@ export default function GraphPage() {
               </button>
             )
           })}
+          {realActors.length === 0 && (
+            <div style={{ ...S.actorSub, padding: '0 4px' }}>No correlated actors yet.</div>
+          )}
+
           {isolatedNodes.length > 0 && (
             <>
-              {realActors.length > 0 && <div style={{ height: 1, background: 'var(--color-line)', margin: '16px 0 8px' }} />}
+              <div style={{ height: 1, background: 'var(--color-line)', margin: '16px 0 8px' }} />
               <div style={S.sideLabel}>Unlinked</div>
               <button
                 onClick={() => { setSelectedActor('general'); setSelected(null) }}

@@ -6,7 +6,7 @@ import { ingestProbePackage } from '@/api/collections'
 async function calculateFileHash(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer()
   const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
-  
+
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
   return hashHex
@@ -15,36 +15,34 @@ async function calculateFileHash(file: File): Promise<string> {
 export default function NewScanPage() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  
+
   const [probePackage, setProbePackage] = useState<File | null>(null)
   const [summaryFile, setSummaryFile] = useState<File | null>(null)
-
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!probePackage || !summaryFile) {
-      alert('Please select both the binary file (.bin) and the metadata file (summary.json).')
+    if (!probePackage) {
+      alert('Please select the binary file (.bin).')
       return
     }
-
     setIsSubmitting(true)
-
     try {
       const finalHash = await calculateFileHash(probePackage)
-      
-      const rawSummaryText = await summaryFile.text()
-      const compactSummary = JSON.stringify(JSON.parse(rawSummaryText))
+
+      let compactSummary: string | undefined = undefined
+      if (summaryFile) {
+        const rawSummaryText = await summaryFile.text()
+        compactSummary = JSON.stringify(JSON.parse(rawSummaryText))
+      }
 
       await ingestProbePackage(probePackage, finalHash, compactSummary)
-
       setIsSubmitting(false)
       navigate('/scans')
     } catch (err) {
       console.error("Ingestion failed", err)
       setIsSubmitting(false)
-      
+
       if (err instanceof Error) {
         alert(`Error uploading data: ${err.message}`)
       } else {
@@ -67,14 +65,11 @@ export default function NewScanPage() {
           {user?.username} · Sign out
         </button>
       </header>
-
       <main style={S.main}>
         <div style={S.formContainer}>
           <h1 style={S.title}>New Scan Collection</h1>
-          <p style={S.subtitle}>Upload the probe payload and collection summary to create a new scan collection.</p>
-
+          <p style={S.subtitle}>Upload the probe payload and (optionally) the collection summary to create a new scan collection.</p>
           <form onSubmit={handleSubmit}>
-           
 
             <div style={S.uploadSection}>
               <div style={S.packageGrid}>
@@ -101,9 +96,8 @@ export default function NewScanPage() {
                     </label>
                   </div>
                 </div>
-
                 <div style={S.formGroup}>
-                  <label style={S.label}>2. Collection Summary (.json) *</label>
+                  <label style={S.label}>2. Collection Summary (.json) — optional</label>
                   <div style={S.dropzone}>
                     <input
                       type="file"
@@ -119,7 +113,7 @@ export default function NewScanPage() {
                       ) : (
                         <>
                           <strong>Upload summary</strong>
-                          <span style={S.fileHint}>Summary of the collected data</span>
+                          <span style={S.fileHint}>Summary of the collected data (optional)</span>
                         </>
                       )}
                     </label>
@@ -127,7 +121,6 @@ export default function NewScanPage() {
                 </div>
               </div>
             </div>
-
             <div style={S.actions}>
               <Link to="/scans" style={{ ...S.cancelBtn, ...(isSubmitting ? { pointerEvents: 'none', opacity: 0.5 } : {}) }}>
                 Cancel
@@ -152,12 +145,12 @@ const S: Record<string, React.CSSProperties> = {
   wordmark: { fontWeight: 800, letterSpacing: '-0.01em', fontSize: 18 },
   back: { color: 'var(--color-muted, #94a3b8)', textDecoration: 'none', fontSize: 13 },
   signout: { background: 'transparent', border: 'none', color: 'var(--color-muted, #94a3b8)', cursor: 'pointer', fontSize: 13 },
-  
+
   main: { flex: 1, padding: '40px 24px', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' },
   formContainer: { width: '100%', maxWidth: 750, background: 'rgba(30, 41, 59, 0.25)', padding: 32, borderRadius: 12, border: '1px solid var(--color-line, #33415c)' },
   title: { fontSize: 22, fontWeight: 700, margin: '0 0 6px' },
   subtitle: { color: 'var(--color-muted, #94a3b8)', fontSize: 13, marginBottom: 28 },
-  
+
   formGroup: { marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 8 },
   label: { fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-muted, #94a3b8)' },
   subLabel: { fontSize: 12, fontWeight: 500, color: '#e2e8f0' },
@@ -170,11 +163,11 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 13,
     outline: 'none',
   },
-  
+
   uploadSection: { background: 'rgba(15, 23, 42, 0.4)', padding: 20, borderRadius: 8, marginBottom: 24, border: '1px solid rgba(51, 65, 85, 0.5)' },
-  
+
   packageGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 },
-  
+
   dropzone: {
     border: '2px dashed var(--color-line, #33415c)',
     borderRadius: 8,
@@ -192,7 +185,6 @@ const S: Record<string, React.CSSProperties> = {
   uploadIcon: { fontSize: 22 },
   fileHint: { fontSize: 10, color: 'var(--color-muted, #94a3b8)', marginTop: 2, lineHeight: 1.3 },
   fileName: { color: '#e0b94e', fontWeight: 600, fontFamily: 'var(--font-mono)', fontSize: 11, wordBreak: 'break-all' },
-
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 12, borderTop: '1px solid var(--color-line, #33415c)', paddingTop: 20 },
   cancelBtn: {
     textDecoration: 'none',

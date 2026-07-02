@@ -9,7 +9,8 @@ import ScansPage from '@/features/scans/ScansPage'
 import GraphPage from '@/features/graph/GraphPage'
 import NewScanPage from '@/features/scans/NewScanPage'
 import { UsersPage } from '@/features/settings/UsersPage'
-import { ProbeTokensPage } from './features/settings/ProbeTokensPage'
+import { ProbeTokensPage } from '@/features/settings/ProbeTokensPage'
+import SummaryPage from '@/features/graph/SummaryPage'
 
 function AppRoutes() {
   const { loading, setupRequired } = useAuth()
@@ -42,6 +43,15 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <GraphPage />
+          </RequireAuth>
+        }
+      />
+
+      <Route 
+        path="/scans/:collectionId/summary"
+        element={
+          <RequireAuth>
+            <SummaryPage />
           </RequireAuth>
         }
       />
