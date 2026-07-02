@@ -179,8 +179,5 @@
 
     if ($Host.Name -eq "ConsoleHost") {
         Read-Host -Prompt "Press Enter to close"
-<<<<<<< Updated upstream
     }
-=======
     }
->>>>>>> Stashed changes
