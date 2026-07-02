@@ -35,43 +35,6 @@ _BURST_MIN_BLOCKS     = 10
 
 
 
-class SuspiciousScriptBlockContentRule(PerEventRule):
-    rule_id = "PS_SUSPICIOUS_SCRIPTBLOCK_001"
-
-    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
-        if _action(event) != "scriptblock-logged":
-            return None
-
-        text = _script_text(event)
-        if not text or not _SUSPICIOUS_PS_PATTERNS.search(text):
-            return None
-
-        matched = [m.group() for m in _SUSPICIOUS_PS_PATTERNS.finditer(text)]
-
-        return DetectionFinding(
-            rule_id=self.rule_id,
-            rule_name="Suspicious PowerShell Script Block Content",
-            rule_type="per_event",
-            severity=Severity.HIGH,
-            confidence=0.88,
-            technique_id="T1059.001",
-            technique_name="PowerShell",
-            tactic=MitreTactic.EXECUTION,
-            kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["powershell", "scriptblock", "obfuscation"],
-            source="powershell",
-            description=f"Script block contains suspicious patterns: {matched[:3]}",
-            timestamp=_ts(event),
-            triggered_by=[event.id],
-            extra={
-                "script_block_id": _script_block_id(event),
-                "runspace_id": _runspace_id(event),
-                "matched_patterns": matched,
-                "text_preview": text[:300],
-            }
-        )
-
-
 class OrphanedScriptBlockRule(AggregateRule):
     rule_id = "PS_ORPHANED_SCRIPTBLOCK_001"
 
@@ -113,62 +76,6 @@ class OrphanedScriptBlockRule(AggregateRule):
                     "hostname": _hostname(e),
                 }
             ))
-
-        return findings
-
-
-class ScriptBlockBurstRule(AggregateRule):
-    rule_id = "PS_SCRIPTBLOCK_BURST_001"
-
-    def match(self, events: list[NormalizedEvent]) -> list[DetectionFinding]:
-        runspace_invocations: dict[str, list[tuple[str, datetime]]] = defaultdict(list)
-        for e in events:
-            if _action(e) != "scriptblock-started":
-                continue
-            rs_id = _runspace_id(e)
-            if rs_id:
-                runspace_invocations[rs_id].append((e.id, _ts(e)))  # e.id
-
-        findings = []
-        window = timedelta(seconds=_BURST_WINDOW_SECONDS)
-
-        for rs_id, invocations in runspace_invocations.items():
-            invocations.sort(key=lambda x: x[1])
-
-            for start in range(len(invocations)):
-                t0 = invocations[start][1]
-                window_hits = [
-                    (idx, t) for idx, t in invocations[start:]
-                    if t - t0 <= window
-                ]
-                if len(window_hits) >= _BURST_MIN_BLOCKS:
-                    triggered = [event_id for event_id, _ in window_hits]
-                    findings.append(DetectionFinding(
-                        rule_id=self.rule_id,
-                        rule_name="Script Block Execution Burst",
-                        rule_type="aggregate",
-                        severity=Severity.HIGH,
-                        confidence=0.80,
-                        technique_id="T1059.001",
-                        technique_name="PowerShell",
-                        tactic=MitreTactic.EXECUTION,
-                        kill_chain_phase=KillChainPhase.EXPLOITATION,
-                        tags=["powershell", "scriptblock", "burst", "enumeration"],
-                        source="powershell",
-                        description=(
-                            f"{len(window_hits)} script blocks invoked in "
-                            f"{_BURST_WINDOW_SECONDS}s from runspace {rs_id[:8]}…"
-                        ),
-                        timestamp=invocations[start][1],
-                        triggered_by=triggered,
-                        event_count=len(window_hits),
-                        extra={
-                            "runspace_id": rs_id,
-                            "block_count": len(window_hits),
-                            "window_seconds": _BURST_WINDOW_SECONDS,
-                        }
-                    ))
-                    break  
 
         return findings
 
@@ -233,11 +140,9 @@ class ConfirmedSuspiciousExecutionRule(AggregateRule):
 
 def get_powershell_rules() -> tuple[list[PerEventRule], list[AggregateRule]]:
     per_event = [
-        SuspiciousScriptBlockContentRule(),
     ]
     aggregate = [
         OrphanedScriptBlockRule(),
-        ScriptBlockBurstRule(),
         ConfirmedSuspiciousExecutionRule(),
     ]
     return per_event, aggregate

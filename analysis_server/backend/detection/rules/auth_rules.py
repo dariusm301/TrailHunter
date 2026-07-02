@@ -143,7 +143,7 @@ class RemoteLoginRule(PerEventRule):
             rule_type="per_event",
             requires=requires,
             provides=provides,
-            fusion_key=[("session", sid)],
+            fusion_key=[],
             severity=Severity.HIGH,
             confidence=0.85,
             technique_id="T1021",

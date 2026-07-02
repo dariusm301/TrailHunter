@@ -11,8 +11,8 @@ from detection.models import (
     Capability, DetectionFinding, Severity,
     MitreTactic, KillChainPhase,
 )
-
-from ..helpers import _url, _status, _ip, _ts, _ua, _file_name, _cmd_from_url
+from urllib.parse import parse_qs
+from ..helpers import _url, _status, _ip, _ts, _ua, _file_name, _cmd_from_url, _method, _body
 
 
 
@@ -375,6 +375,94 @@ class MaliciousFileUploadRule(PerEventRule):
                 "file_name": _file_name(event),
             }
         )
+_SHELL_METACHARS = re.compile(r'[|;&`$]|\$\(|%0a|\n')
+
+_SUSPICIOUS_CMD_TOKENS = re.compile(
+    r'\b('
+    r'net\s+(user|localgroup|group)|'
+    r'whoami|systeminfo|ipconfig|ifconfig|hostname|'
+    r'powershell(\.exe)?|cmd(\.exe)?(\s+/c)?|'
+    r'wget|curl|certutil|bitsadmin|'
+    r'nc(\.exe)?\s|netcat|ncat|'
+    r'cat\s+/etc/passwd|/bin/(ba)?sh|/bin/dash|'
+    r'ping\s+-[nc]\s|'
+    r'reg\s+(add|query|delete)|schtasks|'
+    r'wmic|rundll32|mshta|'
+    r'tasklist|taskkill|'
+    r'echo\s.*>\s|type\s+nul|'
+    r'base64\s+-d|certutil\s+-decode'
+    r')\b',
+    re.IGNORECASE
+)
+
+
+def _suspicious_cmd_from_body(event: NormalizedEvent) -> Optional[str]:
+    """Scanează toate valorile din body-ul POST, indiferent de numele
+    parametrului, după pattern-uri de command injection / LotL."""
+    raw = _body(event)
+    if not raw:
+        return None
+    try:
+        parsed = parse_qs(raw, keep_blank_values=False)
+    except Exception:
+        return None
+
+    for values in parsed.values():
+        for v in values:
+            v = v.strip()
+            if not v:
+                continue
+            if _SUSPICIOUS_CMD_TOKENS.search(v) and _SHELL_METACHARS.search(v):
+                return v
+    return None
+
+
+class WebshellPostBodyExecutionRule(PerEventRule):
+    rule_id = "WEB_WEBSHELL_EXEC_002"
+
+    def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
+        if _method(event) != "POST":
+            return None
+        url = _url(event)
+        if not url:
+            return None
+
+        cmd = _suspicious_cmd_from_body(event)
+        if not cmd:
+            return None
+
+        file_name = _file_name(event)
+
+        return DetectionFinding(
+            rule_id=self.rule_id,
+            rule_name="Suspicious Command in POST Body",
+            rule_type="per_event",
+            requires=[],
+            provides=[Capability("web_command", bind=("command_line",), values=(cmd,))],
+            fusion_key=[("webshell_command", cmd)],
+            severity=Severity.CRITICAL,
+            confidence=0.85,
+            technique_id="T1505.003",
+            technique_name="Web Shell",
+            tactic=MitreTactic.EXECUTION,
+            kill_chain_phase=KillChainPhase.EXPLOITATION,
+            tags=["webshell", "rce", "execution", "web", "post_body"],
+            source="web_logs",
+            description=f"Suspicious command detected in POST body from {_ip(event)} to {url}: {cmd}",
+            timestamp=_ts(event) or None,
+            triggered_by=[event.id],
+            extra={
+                "source_ip": _ip(event),
+                "url": url,
+                "status_code": _status(event),
+                "raw_body": _body(event),
+            },
+            entities={
+                "source_ip": _ip(event),
+                "file_name": file_name,
+                "command": cmd,
+            }
+        )
 
 # ────────────────────────────────────────────
 # AGGREGATE RULES
@@ -486,25 +574,22 @@ class ScannerUserAgentRule(AggregateRule):
     rule_id = "WEB_SCANNER_UA_001"
 
     def match(self, events: list[NormalizedEvent]) -> list[DetectionFinding]:
-        
         findings = []
-        by_tool: dict[str, list[tuple[int, NormalizedEvent]]] = defaultdict(list)
-
+        by_tool_ip: dict[tuple[str, str], list[tuple[int, NormalizedEvent]]] = defaultdict(list)
+        
         for i, e in enumerate(events):
             ua = _ua(e)
             if not ua:
                 continue
-
             match = _SCANNER_UA_PATTERNS.search(ua)
             if match:
-                tool = match.group(1).lower() 
-                by_tool[tool].append((i, e))
-
-        for tool, hits in by_tool.items():
+                tool = match.group(1).lower()
+                ip = _ip(e) or "unknown"
+                by_tool_ip[(tool, ip)].append((i, e))
+        
+        for (tool, ip), hits in by_tool_ip.items():
             ids = [e.id for _, e in hits]
             first_ts = _ts(hits[0][1])
-            source_ips = list({_ip(e) for _, e in hits if _ip(e)})
-
             findings.append(DetectionFinding(
                 rule_id=self.rule_id,
                 rule_name="Known Scanner Detected",
@@ -519,18 +604,17 @@ class ScannerUserAgentRule(AggregateRule):
                 kill_chain_phase=KillChainPhase.RECONNAISSANCE,
                 tags=["scanner", "recon", "web"],
                 source="web_logs",
-                description=f"Scanning tool '{tool}' detected — {len(hits)} requests from {len(source_ips)} IPs",
-                timestamp= first_ts or None,
+                description=f"Scanning tool '{tool}' detected — {len(hits)} requests from {ip}",
+                timestamp=first_ts or None,
                 triggered_by=ids,
                 event_count=len(hits),
                 extra={
                     "tool": tool,
-                    "source_ip": source_ips,
+                    "source_ip": [ip],
                 },
             ))
-
         return findings
-    
+        
 
 class SuccessfulLoginAfterBruteForce(AggregateRule):
     rule_id = "WEB_LOGIN_SUCCESS_AFTER_BF_001"
@@ -565,7 +649,6 @@ class SuccessfulLoginAfterBruteForce(AggregateRule):
                     continue
 
                 next_path   = next_req.url.path if next_req.url else ""
-                next_status = next_req.http.response_status_code if next_req.http else None
 
                 if "/login.php" not in next_path:
                     if ip in already_detected:
@@ -611,6 +694,7 @@ def get_web_rules() -> tuple[list[PerEventRule], list[AggregateRule]]:
         WebshellUploadRule(),
         WebshellExecutionRule(),
         MaliciousFileUploadRule(),
+        WebshellPostBodyExecutionRule()
     ]
     aggregate = [
         BruteForceRule(),

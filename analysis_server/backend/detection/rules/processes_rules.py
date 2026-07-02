@@ -9,7 +9,8 @@ from detection.models import (
     MitreTactic, KillChainPhase, Capability
 )
 from ..helpers import (
-    _ts,  _username, _pid, _parent_name, _parent_pid, _process_name, _get_args, _logon_id, _extract_command
+    _ts,  _username, _pid, _parent_name, _parent_pid, _process_name, _get_args, 
+    _logon_id, _extract_command, _parent_command_line, _src_ip
 )
 
 
@@ -88,7 +89,7 @@ _SYSTEM_ONLY_PROCESSES = re.compile(
 )
 
 _WEB_SERVER_PROCESSES = re.compile(
-    r"^(httpd|apache|php-cgi|php|w3wp|nginx|tomcat)(\.exe)?$",
+    r"^(httpd|apache|php-cgi|w3wp|nginx|tomcat)(\.exe)?$",
     re.IGNORECASE
 )
 
@@ -148,23 +149,26 @@ _XAMPP_TOOLS = re.compile(
 
 _XAMPP_CMD_WRAPPER = re.compile(r'(?i)^cmd(\.exe)?$')
 
-def _is_xampp_installer_fp(process: str, cmdline: str | None) -> bool:
+def _is_xampp_installer_fp(process: str, cmdline: Optional[str], parent_cmdline: Optional[str]) -> bool:
     if not cmdline:
         return False
-    
+
+    if parent_cmdline and re.search(r"install[/\\]install\.php", parent_cmdline, re.IGNORECASE):
+        return True
+
     if _XAMPP_TOOLS.match(process) and _XAMPP_INSTALL_PATHS.search(cmdline):
         return True
-    
+
     if _XAMPP_CMD_WRAPPER.match(process):
         first_token = cmdline.split()[0] if cmdline.split() else ""
         tool_name = re.search(r'(?i)([\w]+\.exe)', first_token)
         if tool_name and _XAMPP_TOOLS.match(tool_name.group(1)):
             if _XAMPP_INSTALL_PATHS.search(cmdline):
                 return True
-    
+
     if _BENIGN_PHP_PROBES.search(cmdline):
         return True
-    
+
     return False
 
 class WebshellChildProcessRule(PerEventRule):
@@ -173,27 +177,22 @@ class WebshellChildProcessRule(PerEventRule):
     def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if not event.process:
             return None
-
         process = _process_name(event)
         if not _SUSPICIOUS_PROCESSES.match(process):
             return None
-
         parent = _parent_name(event)
         if not parent or not _WEB_SERVER_PROCESSES.match(parent):
             return None
-        
 
         cmdline = _extract_command(event)
-
-        if _is_xampp_installer_fp(process, cmdline):
+        parent_cmdline = _parent_command_line(event)
+        if _is_xampp_installer_fp(process, cmdline, parent_cmdline):
             return None
-
-
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Webshell Child Process",
             rule_type="per_event",
-            requires=[Capability("web_command", bind=("command_line",), values=(cmdline,))] if cmdline else [],
+            requires=[Capability("web_command", bind=("command_line", ), values=(cmdline,))] if cmdline else [],
             provides=[Capability("code_execution", bind=("command_line",), values=(cmdline,))] if cmdline else [],
             fusion_key=[("webshell_process", cmdline)] if cmdline else [],
             severity=Severity.CRITICAL,
@@ -215,7 +214,6 @@ class WebshellChildProcessRule(PerEventRule):
                 "command_line": cmdline or None,
             }
         )
-
 class SuspiciousCommandLineRule(PerEventRule):
     rule_id = "WIN_SUSPICIOUS_CMDLINE_001"
 
@@ -258,11 +256,6 @@ class SuspiciousCommandLineRule(PerEventRule):
             timestamp=_ts(event),
             triggered_by=[event.id],
             extra={
-                "command":   command,
-                "process":   _process_name(event),
-                "parent":    parent,
-                "username":  _username(event),
-                "user_sid":  sid,
             }
         )
 

@@ -159,7 +159,7 @@ class SuspiciousOutboundConnectionRule(PerEventRule):
         dst_port = _dst_port(event)
         dst_ip = _dst_ip(event)
 
-        if dst_port in _SUSPICIOUS_PORTS:
+        if dst_port not in _SUSPICIOUS_PORTS:
             return None
         
         state = (event.event.action or "").lower()
@@ -248,14 +248,16 @@ class WebServerInboundConnectionRule(PerEventRule):
             return None  
 
         src_ip = _src_ip(event)
-        if src_ip is None or src_ip.startswith("127.") or src_ip.startswith("::1"):
+        if src_ip is None or src_ip.startswith("127.") or src_ip.startswith("::1") or\
+            src_ip.startswith("0.0.0.0") or src_ip.startswith("0:0:0"):
             return None
 
         return DetectionFinding(
             rule_id=self.rule_id,
             rule_name="Web Server Inbound Connection",
             rule_type="per_event",
-            severity=Severity.INFO,        
+            fusion_key=[("INBOUND_CON_WITH_LOGON", "IP_ADDRESS", src_ip)],
+            severity=Severity.INFO,  
             confidence=0.95,              
             technique_id="T1190",
             technique_name="Exploit Public-Facing Application",
@@ -324,6 +326,7 @@ def get_connection_rules() -> tuple[list[PerEventRule], list[AggregateRule]]:
         ReverseShellConnectionRule(),
         SuspiciousOutboundConnectionRule(),
         SuspiciousInboundSSHRule(),
+        WebServerInboundConnectionRule()
     ]
     aggregate = [
         ArpPoisoningRule(),
