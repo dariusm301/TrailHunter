@@ -122,8 +122,9 @@ try {
 	    $script:downloadStream = [System.IO.File]::Create($script:downloadPath)
 	    $script:downloadTotal = $msg.size
 	    $script:downloadReceived = 0
-	    Write-Host "`nReceiving $($msg.filename) ($([math]::Round($msg.size/1KB,1)) KB) -> $($script:outputDir)" -ForegroundColor Cyan
-	}
+	    Write-Host "`nReceiving $($msg.filename) ($([math]::Round($msg.size/1KB,1)) KB)" -ForegroundColor Cyan
+	    Send-WsMessage -Socket $ws -Object @{ type = "ready" } -Token $cts.Token
+    	}
 	"file_chunk" {
 		    $bytes = [System.Convert]::FromBase64String($msg.data)
 		    $script:downloadStream.Write($bytes, 0, $bytes.Length)
@@ -132,21 +133,22 @@ try {
 			$pct = [math]::Round(($script:downloadReceived / $script:downloadTotal) * 100)
 			Write-Host -NoNewline "`rProgress: $pct%   "
 		    }
+		    Send-WsMessage -Socket $ws -Object @{ type = "ready" } -Token $cts.Token
 		}
-		"file_end" {
-		    $script:downloadStream.Close()
-		    $localHash = (Get-FileHash -Path $script:downloadPath -Algorithm SHA256).Hash.ToLower()
-		    if ($localHash -eq $msg.sha256) {
-			Write-Host "`nSaved $($script:downloadPath) — hash verified OK" -ForegroundColor Green
-		    } else {
-			Write-Host "`nHASH MISMATCH for $($script:downloadPath)!" -ForegroundColor Red
-			Write-Host "  expected: $($msg.sha256)" -ForegroundColor Red
-			Write-Host "  got:      $localHash" -ForegroundColor Red
-		    }
-		}
-		"transfer_end" {
-		    Write-Host "`nAll files transferred." -ForegroundColor Green
-		}
+	"file_end" {
+	    $script:downloadStream.Close()
+	    $localHash = (Get-FileHash -Path $script:downloadPath -Algorithm SHA256).Hash.ToLower()
+	    if ($localHash -eq $msg.sha256) {
+		Write-Host "`nSaved $($script:downloadPath) — hash verified OK" -ForegroundColor Green
+	    } else {
+		Write-Host "`nHASH MISMATCH for $($script:downloadPath)!" -ForegroundColor Red
+		Write-Host "  expected: $($msg.sha256)" -ForegroundColor Red
+		Write-Host "  got:      $localHash" -ForegroundColor Red
+	    }
+	}
+	"transfer_end" {
+	    Write-Host "`nAll files transferred." -ForegroundColor Green
+	}
 
             "bye" {
                 Write-Host "`nThe server closed the connection." -ForegroundColor Yellow

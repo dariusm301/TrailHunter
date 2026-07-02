@@ -64,14 +64,6 @@ def list_collections() -> list[dict]:
     return collections
 
 
-def iter_file_chunks(path: Path, chunk_size: int = CHUNK_SIZE):
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
-
 def get_collection_path(collection_id: str) -> Path | None:
     if ".." in collection_id or collection_id.startswith("/"):
         return None

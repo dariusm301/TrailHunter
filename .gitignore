@@ -33,4 +33,9 @@ Documentatie
 tools
 Images/
 data/
+<<<<<<< Updated upstream
 analysis_server/backend/collector/
+=======
+
+probe_config.json
+>>>>>>> Stashed changes
