@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/api/ingest")
 async def collect_data_web(
     request: Request,
-    x_collection_hash: Optional[str] = Header(None),
+    x_collection_hash: str = Header(None),
     x_collection_summary: Optional[str] = Header(None),
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db),

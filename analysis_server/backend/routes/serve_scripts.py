@@ -27,5 +27,5 @@ async def serve_module(platform: str,
         raise HTTPException(status_code=404, detail="Script not found")
     script_path = script_path.resolve()
     
-    return PlainTextResponse(script_path.read_text())
+    return PlainTextResponse(script_path.read_text(encoding="utf-8-sig").replace("\r\n", "\n"))
     

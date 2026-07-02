@@ -91,8 +91,6 @@ def verify_probe_token(db: Session, raw_token: str) -> ProbeToken | None:
         return None
     if token_record.single_use and token_record.used_at is not None:
         return None
-    token_record.last_used_at = datetime.now(timezone.utc)
-    db.commit()
     return token_record
 
 def get_current_probe(

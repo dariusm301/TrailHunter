@@ -102,3 +102,21 @@ async def revoke_probe_token(
     record.revoked = True
     db.commit()
     return {"message": "Token revoked"}
+
+@router.delete("/api/probes/tokens/{token_id}/permanent")
+async def delete_probe_token(
+    token_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(ProbeToken)
+        .filter(ProbeToken.id == token_id, ProbeToken.user_id == current_user.id)
+        .first()
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Probe token not found")
+
+    db.delete(record)
+    db.commit()
+    return {"message": "Token permanently deleted"}

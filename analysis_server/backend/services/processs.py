@@ -13,6 +13,7 @@ from normalizers.windows.registry import RegistryNormalizer
 from normalizers.windows.scheduled_tasks import ScheduledTasksNormalizer
 from normalizers.apache import ApacheNormalizer
 from normalizers.helpers.probe_ip import _resolve_probe_ips
+from normalizers.helpers.dumpio_enrichment import enrich_dumpio_with_ip
 
 def process_collection(storage: CollectionStorage):
     raw_data = storage.load_raw()
@@ -24,7 +25,10 @@ def process_collection(storage: CollectionStorage):
     os_version = payload['metadata']['os_version']
     
     summary = storage.load_summary()
-    probe_ips = _resolve_probe_ips(summary)
+    
+    probe_ips = []
+    if summary.get("collector_ip") is not None:
+        probe_ips = _resolve_probe_ips(summary)
     try:
         wmi_normalizer = WMINormalizer()
         wmi_events = payload.get('modules').get('event_logs').get('wmi', [])
@@ -180,6 +184,7 @@ def process_collection(storage: CollectionStorage):
         apache_logs_normalized = []
         if apache_logs:
             apache_normalizer = ApacheNormalizer()
+
             for event_type in apache_logs:
                 events = apache_logs[event_type].get('entries', [])
                 for event in events:
@@ -188,16 +193,24 @@ def process_collection(storage: CollectionStorage):
                         normalized_event.is_probe = BaseNormalizer._is_probe(normalized_event, probe_ips)
                         apache_logs_normalized.append(normalized_event)
                     else:
-                        print(f"Failed to normalize Apache log event: {event}")
-            storage.save_channel('web_logs', apache_logs_normalized)
+                        if not apache_normalizer._dumpio_parser.is_dumpio_line(event):
+                            print(f"Failed to normalize Apache log event: {event}")
 
-        print(summary)
+            dumpio_events = [e for e in apache_logs_normalized if e.event.dataset == "apache.dumpio"]
+            access_log_events = [e for e in apache_logs_normalized if e.event.dataset == "apache.access"]
+
+            missing_ip = [e for e in dumpio_events if not (e.source and e.source.ip)]
+            if missing_ip and access_log_events:
+                enrich_dumpio_with_ip(missing_ip, access_log_events)
+
+            storage.save_channel('web_logs', apache_logs_normalized)
 
         storage.save_summary(
             {
                 "hostname": hostname,
                 "collected_at": collected_at,
                 "os_version": os_version,
+                "sha256": summary.get("sha256"),
                 "collector_ip": summary.get("collector_ip", {}),
                 "event_counts": {
                     "wmi": len(wmi_events_normalized),
@@ -212,8 +225,8 @@ def process_collection(storage: CollectionStorage):
                     "scheduled_tasks": len(scheduled_tasks_events_normalized),
                     "web_logs": len(apache_logs_normalized)
                 },
-                "hashes": 
-                    payload.get('module_hashes', {}),           
+                "hashes": payload.get('module_hashes', {}),    
+                "size_bytes": summary.get("size_bytes", 0),    
             }
         )
     except Exception as e:

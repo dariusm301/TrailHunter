@@ -29,7 +29,7 @@ async def get_all_collections(
             scan_data = {
                 "id": cid,
                 "host": storage.hostname,
-                "collected_at": storage.timestamp,
+                "collected_at": summary.get("collected_at", None),
                 "event_count": total_events,
                 "finding_count": total_findings,
                 "actor_count": summary.get("actor_count", None),
@@ -88,3 +88,20 @@ async def get_findings_for_collection(
         "max_severity": max_sev,
         "findings": [f.model_dump() for f in all_findings],
     }
+
+@router.get("/api/collections/{collection_id:path}/summary")
+async def get_collection_summary(
+    collection_id: str,
+    current_user: User = Depends(get_current_user),
+    db_session=Depends(get_db),
+):
+    try:
+        collection = CollectionStorage.load(collection_id, current_user.id, db_session)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    
+    summary = collection.load_summary()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    
+    return summary

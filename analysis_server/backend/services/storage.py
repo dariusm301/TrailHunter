@@ -13,7 +13,7 @@ COLLECTIONS_ROOT = DATA_DIR / "collections"
 
 
 class CollectionStorage:
-    def __init__(self, collection_id: str,  hostname: str, db_session, base_path: str | None = None):
+    def __init__(self, collection_id: str,  hostname: str, db_session):
         self.hostname = hostname
         self.db_session = db_session
         self.base_path = COLLECTIONS_ROOT / collection_id
@@ -25,10 +25,11 @@ class CollectionStorage:
         self.timestamp = datetime.now(timezone.utc).isoformat()
 
     @classmethod
-    def create(cls, hostname: str, user_id: str, db_session) -> "CollectionStorage":
+    def create(cls, hostname: str, user_id: str, db_session,  token_id: str | None = None) -> "CollectionStorage":
         """Generate a new collection storage instance with a unique timestamp."""
         record = Collection(user_id=user_id, hostname=hostname,
-                            name = f"{hostname}_{datetime.now(timezone.utc).isoformat()}")
+                            name = f"{hostname}_{datetime.now(timezone.utc).isoformat()}",
+                            token_id=token_id,)
         db_session.add(record)
         db_session.commit()
         instance = cls(record.id, hostname, db_session)
@@ -61,13 +62,14 @@ class CollectionStorage:
 
         (self.raw_path / "collection.bin").write_bytes(data)
 
+
         summary = self.load_summary()
-        if summary and summary.get("sha256", "").lower() != provided_hash.lower():
+        if summary and summary.get("sha256") and summary.get("sha256").lower() != provided_hash.lower():
             return False
-        
         summary.update({
             "hostname": self.hostname,
             "timestamp": self.timestamp,
+            "sha256": provided_hash.lower(),
             "size_bytes": len(data),
         })
 
@@ -159,7 +161,6 @@ class CollectionStorage:
 
     @staticmethod
     def list_collections(user_id: str, db_session) -> list[str]:
-        """List all available collections in the root directory."""
         record = db_session.query(Collection).filter(Collection.user_id == user_id).all()
         return [r.id for r in record]
     
