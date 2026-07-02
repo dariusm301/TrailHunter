@@ -1,21 +1,14 @@
+from difflib import SequenceMatcher
 import json
 import networkx as nx
 from collections import defaultdict
 from models.events import NormalizedEvent
 from detection.models import DetectionFinding
 from datetime import timedelta, timezone, datetime
-from dataclasses import dataclass, field
-from detection.fusion import fuse_findings
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Constants
-# ─────────────────────────────────────────────────────────────────────────────
+import re
 
 TEMPORAL_WINDOW = timedelta(hours=6)
-
 TIGHT_WINDOW = timedelta(minutes=2)
-
 TIGHT_CONTRACTS: frozenset[str] = frozenset({"code_execution"})
 
 GENERIC_SIDS: frozenset[str] = frozenset({
@@ -24,38 +17,26 @@ GENERIC_SIDS: frozenset[str] = frozenset({
     "S-1-5-20",   # NETWORK SERVICE
 })
 
+ENTRY_POINT_RULES: frozenset[str] = frozenset({
+    "NET_WEBSERVER_INBOUND_001",
+})
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Correlator
-# ─────────────────────────────────────────────────────────────────────────────
 
 class Correlator:
-
     def __init__(self, events: dict[str, NormalizedEvent], findings: list[DetectionFinding]):
         self.events      = events
         self.findings    = findings
         self.finding_map = {f.id: f for f in findings}
         self.graph       = nx.DiGraph()
-        self.diagnostics: dict[str, list] = {
-            "matched_contracts": [],  
-            "orphan_requires":   [],   
-            "orphan_provides":   [],   
-            "poisoned_none":     [],   
-        }
-
-    # ── Public API ────────────────────────────────────────────────────────────
 
     def build_graph(self) -> nx.DiGraph:
         self.add_findings()
-        self.correlate_provenance()      
-        self.correlate_lineage()        
+        self.correlate_provenance()
+        self.correlate_lineage()
         self.actor_groups = self.partition_actors()
-        self._run_diagnostics()
-        self.print_diagnostics()
         return self.graph
 
-    # ── Graph construction ────────────────────────────────────────────────────
-
+    # Graph construction 
     def add_findings(self) -> None:
         for finding in self.findings:
             self.graph.add_node(
@@ -67,15 +48,18 @@ class Correlator:
 
     def _finding_ip(self, finding) -> str | None:
         for tid in finding.triggered_by:
+            remote = (finding.extra or {}).get("remote_ip")
+            if remote and remote not in ("-", ""):
+                return remote
             ev = self.events.get(tid)
             if ev and ev.source and ev.source.ip:
                 return ev.source.ip
         return None
-    
+
     @staticmethod
     def _serialize_event(ev: NormalizedEvent) -> dict:
         return ev.model_dump(exclude_none=True, mode="json")
-    
+
     def _prune(self, o):
         if isinstance(o, dict):
             return {k: pv for k, v in o.items()
@@ -86,12 +70,14 @@ class Correlator:
 
     def serialize(self, collector_ip: list[str] | None = None) -> dict:
         actor_of = {fid: idx for idx, g in enumerate(self.actor_groups) for fid in g}
+
         event_payload: dict[str, dict] = {}
         nodes = []
         for nid, attrs in self.graph.nodes(data=True):
             finding = self.finding_map[nid]
             fields = dict(attrs.get("fields", {}))
             fields["source_ip"] = self._finding_ip(finding)
+
             event_ids = []
             for tid in finding.triggered_by:
                 ev = self.events.get(tid)
@@ -99,7 +85,8 @@ class Correlator:
                     continue
                 event_ids.append(tid)
                 if tid not in event_payload:
-                    event_payload[tid] = self._serialize_event(ev)  
+                    event_payload[tid] = self._serialize_event(ev)
+
             requires, provides, fusion_key = self._node_caps([finding])
             nodes.append({
                 "id": nid, "type": attrs.get("type"), "label": attrs.get("label"),
@@ -109,17 +96,19 @@ class Correlator:
                 "provides": provides,
                 "fusion_key": fusion_key,
                 "is_probe": getattr(finding, "is_probe", False),
+                "logon_id": (finding.extra or {}).get("logon_id"),
             })
+
         edges = [
             {"source": s, "target": t, "relation": a.get("relation"),
             "nature": a.get("nature"), "cap": a.get("cap")}
             for s, t, a in self.graph.edges(data=True)
         ]
+
         return {"nodes": nodes, "edges": edges, "events": event_payload,
                 "actor_count": len(self.actor_groups), "collector_ip": collector_ip or []}
 
-    # ── Provenance: requires/provides contracts (CAUSAL) ───────────────────────
-
+    # Provenance: requires/provides contracts (CAUSAL) 
     @staticmethod
     def _cap_window(cap) -> timedelta:
         return TIGHT_WINDOW if cap.name in TIGHT_CONTRACTS else TEMPORAL_WINDOW
@@ -129,25 +118,61 @@ class Correlator:
         """A contract is poisoned if any bound value is None — never match on None."""
         return any(v is None for v in (cap.values or ()))
 
+    _FUZZY_BIND_FIELDS: frozenset[str] = frozenset({
+        "command_line", "command", "body", "query", "args", "script_text",
+    })
+
+    def _is_fuzzy_eligible(self, bind: tuple) -> bool:
+        return any(b in self._FUZZY_BIND_FIELDS for b in (bind or ()))
+
+    def _similarity(self, a: str, b: str) -> float:
+        return SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
+    
+    _FUZZY_THRESHOLD: float = 0.9
+
+    def _values_match(self, a: str, b: str) -> tuple[bool, float]:
+        score = self._similarity(a, b)
+        return score >= self._FUZZY_THRESHOLD, score
+
     def correlate_provenance(self) -> None:
-        """
-        """
         provider_index: dict[tuple, list[DetectionFinding]] = defaultdict(list)
+        structural_index: dict[tuple, list[tuple[DetectionFinding, object]]] = defaultdict(list)
+
         for f in self.findings:
             for cap in (f.provides or []):
                 if self._cap_has_none(cap):
-                    self.diagnostics["poisoned_none"].append((f.id, cap))
                     continue
                 provider_index[(cap.name, cap.bind, cap.values)].append(f)
+                if self._is_fuzzy_eligible(cap.bind):
+                    structural_index[(cap.name, cap.bind)].append((f, cap))
+
         _MISSING_TS = datetime.min.replace(tzinfo=timezone.utc)
+
         for consumer in self.findings:
             for req in (consumer.requires or []):
                 if self._cap_has_none(req):
-                    self.diagnostics["poisoned_none"].append((consumer.id, req))
                     continue
+
                 window = self._cap_window(req)
+                match_kind = "exact"
+
                 providers = provider_index.get((req.name, req.bind, req.values), [])
-                matched_any = False
+
+                if not providers and self._is_fuzzy_eligible(req.bind):
+                    req_value = req.values[0] if req.values else None
+                    if req_value:
+                        scored = []
+                        for f, cap in structural_index.get((req.name, req.bind), []):
+                            if f.id == consumer.id:
+                                continue
+                            for v in (cap.values or ()):
+                                is_match, score = self._values_match(req_value, v)
+                                if is_match:
+                                    scored.append((f, score))
+                        if scored:
+                            providers = [f for f, _ in scored]
+                            match_kind = "fuzzy"
+
                 for provider in providers:
                     if provider.id == consumer.id:
                         continue
@@ -156,19 +181,16 @@ class Correlator:
                     if p_ts != _MISSING_TS and c_ts != _MISSING_TS:
                         if abs(p_ts - c_ts) > window:
                             continue
+                    
                     self.graph.add_edge(
                         provider.id, consumer.id,
                         relation="requires/provides",
                         nature="causal",
                         cap=req.name,
+                        match_kind=match_kind,
                     )
-                    self.diagnostics["matched_contracts"].append((provider.id, consumer.id, req))
-                    matched_any = True
-                if not matched_any:
-                    self.diagnostics["orphan_requires"].append((consumer.id, req))
 
-    # ── Lineage: process parent/child (CAUSAL) ─────────────────────────────────
-
+    # Lineage: process parent/child (CAUSAL) 
     def _trigger_event(self, finding: DetectionFinding) -> NormalizedEvent | None:
         for trigger_id in finding.triggered_by:
             ev = self.events.get(trigger_id)
@@ -177,13 +199,8 @@ class Correlator:
         return None
 
     def correlate_lineage(self) -> None:
-        """
-        Correlates parent→child process relationships using Sysmon ProcessGUID
-        (entity_id) where available, falling back to PID for non-Sysmon events.
-        """
         pid_to_findings: dict[int, list[str]] = defaultdict(list)
         guid_to_findings: dict[str, list[str]] = defaultdict(list)
-
         for f in self.findings:
             ev = self._trigger_event(f)
             if not (ev and ev.process):
@@ -194,15 +211,11 @@ class Correlator:
                 guid_to_findings[ev.process.entity_id].append(f.id)
 
         seen: set[tuple[str, str]] = set()
-
         for f in self.findings:
             ev = self._trigger_event(f)
             if not (ev and ev.process and ev.process.parent):
                 continue
-
             parent = ev.process.parent
-
-            # Prefer GUID (Sysmon), fallback to PID
             if parent.entity_id:
                 parent_fids = guid_to_findings.get(parent.entity_id, [])
             elif parent.pid is not None:
@@ -226,22 +239,29 @@ class Correlator:
                     nature="causal",
                 )
 
-    # ── Identity / co-derivation: GROUPING (no edges) ──────────────────────────
-
-
+    #IDENTITY / CO-DERIVATION: group findings that share a common actor (network, account, process, logon)
+    def _ip_conflict(self, group: set[str]) -> bool:
+        real_ips = {
+            ip for fid in group
+            if (ip := self._finding_ip(self.finding_map[fid]))
+            and ip not in (None, "-", "")
+        }
+        return len(real_ips) >= 2
+        
     def _network_groups(self) -> list[set[str]]:
         """Findings sharing a remote source IP (network-level identity)."""
         ip_to_ids: dict[str, set[str]] = defaultdict(set)
         for f in self.findings:
-            ip = self._finding_ip(f)         
-            if ip:
+            ip = self._finding_ip(f)
+            if ip and ip != '-' and ip != None:
                 ip_to_ids[ip].add(f.id)
         return [ids for ids in ip_to_ids.values() if len(ids) > 1]
 
     def _process_groups(self) -> list[set[str]]:
-        """Findings sharing process identity (process_guid preferred, pid fallback)."""
         key_to_ids: dict[str, set[str]] = defaultdict(set)
         for f in self.findings:
+            if f.rule_id in ENTRY_POINT_RULES:
+                continue
             ev = self._trigger_event(f)
             if not ev or not ev.process:
                 continue
@@ -250,10 +270,12 @@ class Correlator:
             key = f"guid:{guid}" if guid else (f"pid:{pid}" if pid is not None else None)
             if key:
                 key_to_ids[key].add(f.id)
-        return [ids for ids in key_to_ids.values() if len(ids) > 1]
+        return [
+            ids for ids in key_to_ids.values()
+            if len(ids) > 1 and not self._ip_conflict(ids)  # <-- veto
+        ]
 
     def _account_groups(self) -> list[set[str]]:
-        """Findings sharing a non-generic SID."""
         SID_KEYS = ("user_sid", "member_sid")
         sid_to_ids: dict[str, set[str]] = defaultdict(set)
         for f in self.findings:
@@ -263,13 +285,47 @@ class Correlator:
                 if isinstance(sid, str) and sid and sid not in GENERIC_SIDS:
                     sid_to_ids[sid].add(f.id)
                     break
-        return [ids for ids in sid_to_ids.values() if len(ids) > 1]
+        return [
+            ids for ids in sid_to_ids.values()
+            if len(ids) > 1 and not self._ip_conflict(ids)  
+        ]
+    
+    
+    GENERIC_LOGON_IDS: frozenset[str] = frozenset({
+        "0x3e7",   # SYSTEM
+        "0x3e4",   # LOCAL SERVICE
+        "0x3e5",   # NETWORK SERVICE
+    })
+
+    def _entry_point_logon_ids(self) -> frozenset[str]:
+        ids: set[str] = set()
+        for f in self.findings:
+            if f.rule_id in ENTRY_POINT_RULES:
+                logon = (f.extra or {}).get("logon_id")
+                if logon:
+                    ids.add(str(logon).lower())
+        return frozenset(ids)
+
+    def _logon_groups(self) -> list[set[str]]:
+        generic = self.GENERIC_LOGON_IDS | self._entry_point_logon_ids()
+        logon_to_ids: dict[str, set[str]] = defaultdict(set)
+        for f in self.findings:
+            if f.rule_id in ENTRY_POINT_RULES:
+                continue
+            extra = f.extra or {}
+            logon_id = extra.get("logon_id")
+            if logon_id and str(logon_id).lower() not in generic:
+                logon_to_ids[str(logon_id)].add(f.id)
+        return [
+            ids for ids in logon_to_ids.values()
+            if len(ids) > 1 and not self._ip_conflict(ids)  # <-- veto
+        ]
+
 
     def _coderivation_groups(self) -> list[set[str]]:
-        return self._process_groups() + self._account_groups() + self._network_groups()
+        return self._network_groups()  + self._account_groups() + self._process_groups() + self._logon_groups()
 
-    # ── Actor partitioning: WCC + union-find over co-derivation groups ─────────
-
+    # Actor partitioning: WCC + union-find over co-derivation groups
     def partition_actors(self) -> list[set[str]]:
         components = list(nx.weakly_connected_components(self.graph))
         parent = list(range(len(components)))
@@ -298,50 +354,13 @@ class Correlator:
         merged: dict[int, set[str]] = defaultdict(set)
         for idx, comp in enumerate(components):
             merged[find(idx)] |= comp
-        return list(merged.values())
+        return [
+            group for group in merged.values()
+            if self.graph.subgraph(group).number_of_edges() >= 1  
+        ]
 
-    # ── Diagnostics ────────────────────────────────────────────────────────────
 
-    def _run_diagnostics(self) -> None:
-        """Flag provides that were never consumed (dead/planned contracts)."""
-        consumed: set[tuple] = {
-            (cap.name, cap.bind, cap.values)
-            for (_p, _c, cap) in self.diagnostics["matched_contracts"]
-        }
-        for f in self.findings:
-            for cap in (f.provides or []):
-                if self._cap_has_none(cap):
-                    continue
-                if (cap.name, cap.bind, cap.values) not in consumed:
-                    self.diagnostics["orphan_provides"].append((f.id, cap))
-
-    def print_diagnostics(self) -> None:
-        """DEV: human-readable summary of what correlated and what didn't."""
-        d = self.diagnostics
-        print(f"\n{'='*60}\nCORRELATION DIAGNOSTICS\n{'='*60}")
-        print(f"Findings:           {len(self.findings)}")
-        print(f"Causal edges:       {self.graph.number_of_edges()}")
-        print(f"Actors (partitions):{len(getattr(self, 'actor_groups', []))}")
-        print(f"\nMatched contracts ({len(d['matched_contracts'])}):")
-        for p, c, cap in d["matched_contracts"]:
-            print(f"  {self._label(p)} ──[{cap.name}]──▶ {self._label(c)}")
-        print(f"\nOrphan REQUIRES — wanted a provider, none matched ({len(d['orphan_requires'])}):")
-        for fid, cap in d["orphan_requires"]:
-            print(f"  {self._label(fid)} needs {cap.name}{cap.bind}={cap.values}")
-        print(f"\nOrphan PROVIDES — offered, never consumed ({len(d['orphan_provides'])}):")
-        for fid, cap in d["orphan_provides"]:
-            print(f"  {self._label(fid)} offers {cap.name}{cap.bind}={cap.values}")
-        print(f"\nPoisoned (None value, skipped) ({len(d['poisoned_none'])}):")
-        for fid, cap in d["poisoned_none"]:
-            print(f"  {self._label(fid)} {cap.name}{cap.bind}={cap.values}")
-        print(f"{'='*60}\n")
-
-    def _label(self, fid: str) -> str:
-        f = self.finding_map.get(fid)
-        return f.rule_name if f else fid
-
-    # ── Helpers — timestamps & labels ─────────────────────────────────────────
-
+    # Helpers — timestamps & labels
     def _normalize_ts(self, ts: datetime) -> datetime:
         if ts.tzinfo is None:
             return ts.replace(tzinfo=timezone.utc)
@@ -367,8 +386,8 @@ class Correlator:
         for f in findings:
             requires += [self._serialize_cap(c) for c in (f.requires or [])]
             provides += [self._serialize_cap(c) for c in (f.provides or [])]
-            for key in (f.fusion_key or []):           # list[tuple]
-                fusion.append([str(x) for x in key])   # tuple -> list ca sa fie JSON
+            for key in (f.fusion_key or []):           
+                fusion.append([str(x) for x in key])   
         return requires, provides, fusion
 
     def _get_key_fields(self, obj) -> dict:
@@ -386,6 +405,7 @@ class Correlator:
                 "process":    (ev.process.name if ev and ev.process else None) or "—",
                 "events":     str(len(obj.triggered_by)),
                 "fused_signals": fused,
+                "logon_id": (obj.extra or {}).get("logon_id") or '-',
             }
         ts = obj.timestamp
         return {
@@ -393,16 +413,5 @@ class Correlator:
             "action":    (obj.event.action if obj.event else None) or "—",
             "user":      (obj.user.name if obj.user else None) or "—",
             "process":   (obj.process.name if obj.process else None) or "—",
+            "logon_id": (obj.extra or {}).get("logon_id") or '-',
         }
-
-    # ── Helpers — sessions (viewer only) ───────────────────────────────────────
-
-    def _group_by_session(self) -> dict[str, list[str]]:
-        ip_to_findings: dict[str, set[str]] = defaultdict(set)
-        for finding in self.findings:
-            for trigger_id in finding.triggered_by:
-                event = self.events.get(trigger_id)
-                if event and event.source and event.source.ip:
-                    ip_to_findings[event.source.ip].add(finding.id)
-                    break
-        return {ip: list(ids) for ip, ids in ip_to_findings.items() if len(ids) > 1}

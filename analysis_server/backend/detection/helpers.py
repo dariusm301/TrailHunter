@@ -14,7 +14,7 @@ def _action(event: NormalizedEvent) -> str:
     return (event.event.action or "") if event.event else ""
 
 def _src_ip(event: NormalizedEvent) -> Optional[str]:
-    return event.source.address if event.source else None
+    return event.source.ip if event.source else None
 
 def _process_name(event: NormalizedEvent) -> str:
     if event.process and event.process.name:
@@ -107,11 +107,7 @@ def _url(event: NormalizedEvent) -> Optional[str]:
     url = event.url
     if not url:
         return None
-   
-    raw = url.original
-    if raw and raw != "-":
-        return raw
-    return url.path  
+    return url.original or url.path or None  
 
 def _status(event: NormalizedEvent) -> Optional[int]:
     if not event.http:
@@ -154,10 +150,6 @@ def _hostname(event: NormalizedEvent) -> str:
 
 
 def _url(event: NormalizedEvent) -> str:
-    """
-        Returns the most complete URL available in the event, normalized to lowercase.
-        Prefers the original URL if available, otherwise falls back to the path.
-    """
     if event.url:
         original = event.url.original or ""
         path = event.url.path or ""
@@ -166,19 +158,16 @@ def _url(event: NormalizedEvent) -> str:
     return ""
 
 def _status(event: NormalizedEvent) -> Optional[int]:
-    """Returns the HTTP response status code if available, otherwise None."""
     if event.http:
         return event.http.response_status_code
     return None
 
 def _ip(event: NormalizedEvent) -> Optional[str]:
-    """Returns the source IP address of the event, or None if not available."""
     if event.source:
         return event.source.ip
     return None
 
 def _ts(event: NormalizedEvent) -> Optional[datetime]:
-    """Returns the timestamp of the event, or None if not available."""
     return event.event.created if event.event else None
 
 
@@ -201,7 +190,6 @@ def _file_name(event: NormalizedEvent) -> Optional[str]:
     return name if (name and "." in name) else None
 
 def _cmd_from_url(url: str) -> Optional[str]:
-    """Extracts a potential command from the URL query parameters."""
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     for param in ("cmd", "exec", "command", "shell", "run", "system", "passthru", "eval"):
@@ -225,4 +213,26 @@ def _extract_command(event: NormalizedEvent) -> Optional[str]:
     if event.process and event.process.command_line:
         return event.process.command_line
     return None
+
+def _parent_command_line(event: NormalizedEvent) -> Optional[str]:
+    if event.process and event.process.parent and event.process.parent.command_line:
+        return event.process.parent.command_line
+    return None
+
+def _body(event: NormalizedEvent) -> Optional[str]:
+    if not event.http:
+        return None
+    return event.http.request_body or None
+
+
+def _target_path(event: NormalizedEvent) -> Optional[str]:
+    if event.file and event.file.path:
+        return event.file.path
+    return None
+
+def _target_name(event: NormalizedEvent) -> Optional[str]:
+    path = _target_path(event)
+    if not path:
+        return None
+    return path.replace("\\", "/").split("/")[-1]
 

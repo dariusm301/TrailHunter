@@ -7,9 +7,8 @@ from datetime import datetime
 import uuid
 
 
-# ─────────────────────────────────────────────
 # Enums
-# ─────────────────────────────────────────────
+_SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
 class Severity(str, Enum):
     INFO     = "info"
@@ -18,6 +17,11 @@ class Severity(str, Enum):
     HIGH     = "high"
     CRITICAL = "critical"
 
+    def __gt__(self, other: "Severity") -> bool:
+        return _SEVERITY_ORDER[self.value] > _SEVERITY_ORDER[other.value]
+
+    def __ge__(self, other: "Severity") -> bool:
+        return _SEVERITY_ORDER[self.value] >= _SEVERITY_ORDER[other.value]
 
 class KillChainPhase(str, Enum):
     RECONNAISSANCE       = "reconnaissance"
