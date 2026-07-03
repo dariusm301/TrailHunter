@@ -73,7 +73,7 @@
 
     <RuleGroup name="" groupRelation="or">
       <FileDeleteDetected onmatch="include">
-        <TargetFilename name="technique_id=T1485,technique_name=Data Destruction" condition="begin with">C:\Important\</TargetFilename>
+        <TargetFilename name="technique_id=T1485,technique_name=Data Destruction" condition="begin with">C:\xampp\htdocs\database</TargetFilename>
       </FileDeleteDetected>
     </RuleGroup>
 
