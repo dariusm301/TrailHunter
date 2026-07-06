@@ -171,8 +171,8 @@ def _is_xampp_installer_fp(process: str, cmdline: Optional[str], parent_cmdline:
 
     return False
 
-class WebshellChildProcessRule(PerEventRule):
-    rule_id = "PROC_WEBSHELL_CHILD_001"
+class WebServerChildProcessRule(PerEventRule):
+    rule_id = "PROC_WEBSERVER_CHILD_001"
 
     def match(self, event: NormalizedEvent) -> Optional[DetectionFinding]:
         if not event.process:
@@ -190,18 +190,18 @@ class WebshellChildProcessRule(PerEventRule):
             return None
         return DetectionFinding(
             rule_id=self.rule_id,
-            rule_name="Webshell Child Process",
+            rule_name="Web Server Child Process",
             rule_type="per_event",
             requires=[Capability("web_command", bind=("command_line", ), values=(cmdline,))] if cmdline else [],
             provides=[Capability("code_execution", bind=("command_line",), values=(cmdline,))] if cmdline else [],
-            fusion_key=[("webshell_process", cmdline)] if cmdline else [],
+            fusion_key=[("webserver_process", cmdline)] if cmdline else [],
             severity=Severity.CRITICAL,
             confidence=0.95,
-            technique_id="T1505.003",
-            technique_name="Web Shell",
+            technique_id="T1059",
+            technique_name="Command and Scripting Interpreter",
             tactic=MitreTactic.EXECUTION,
             kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["webshell", "process"],
+            tags=["web server exec", "process"],
             source="process",
             description=f"'{process}' spawned by web server '{parent}'",
             timestamp=_ts(event),
@@ -235,7 +235,7 @@ class SuspiciousCommandLineRule(PerEventRule):
             requires = [Capability("session_established", bind=("logon_id",), values=(_logon_id(event),))]
 
         if command is not None:
-            requires = [Capability("code_execution", bind=("command_line",), values=(command,))]
+            requires.append(Capability("code_execution", bind=("command_line",), values=(command,)))
 
         return DetectionFinding(
             rule_id=self.rule_id,
@@ -426,7 +426,7 @@ class SuspiciousCmdlineRule(AggregateRule):
 def get_processes_rules() -> tuple[list[PerEventRule], list[AggregateRule]]:
     per_event = [
         SuspiciousProcessRule(),
-        WebshellChildProcessRule(),
+        WebServerChildProcessRule(),
         SuspiciousCommandLineRule(),
         CommandUserCreationRule(),
         CommandPersistenceArtifactRule(),

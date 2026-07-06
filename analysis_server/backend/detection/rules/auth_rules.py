@@ -149,7 +149,7 @@ class RemoteLoginRule(PerEventRule):
             technique_id="T1021",
             technique_name="Remote Services",
             tactic=MitreTactic.LATERAL_MOVEMENT,
-            kill_chain_phase=KillChainPhase.COMMAND_AND_CONTROL,
+            kill_chain_phase=KillChainPhase.ACTIONS_ON_OBJECTIVES,
             tags=["remote_logon", "lateral_movement", "valid_accounts"],
             source="windows_events",
             description=f"Remote logon by '{username}' — possible attacker-created account",
