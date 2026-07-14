@@ -1,0 +1,15 @@
+[Unit]
+Description=TrailHunter config-based launcher
+After=network.target trailhunter-probe.service dnsmasq
+Requires=trailhunter-probe.service dnsmasq
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/bash -c 'until nc -z 127.0.0.1 8000; do sleep 0.5; done'
+ExecStart= /usr/bin/python3 /home/probe1/TrailHunter/probe/launcher.py
+Restart=on-failure
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

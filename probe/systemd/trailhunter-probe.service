@@ -1,0 +1,15 @@
+[Unit]
+Description=TrailHunter Probe API server
+After=network.target gadget.service
+Wants=gadget.service
+
+[Service]
+Type=simple
+User=probe1
+WorkingDirectory=/home/probe1/TrailHunter/probe/
+ExecStart=/home/probe1/TrailHunter/probe/.venv/bin/python3 main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

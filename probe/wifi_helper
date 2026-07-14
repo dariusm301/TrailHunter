@@ -1,0 +1,4 @@
+#!/bin/bash
+SSID="$1"
+
+nmcli --ask device wifi connect "$SSID"
