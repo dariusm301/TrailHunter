@@ -7,10 +7,11 @@ from detection.models import DetectionFinding
 from datetime import timedelta, timezone, datetime
 import re
 
-TEMPORAL_WINDOW = timedelta(hours=6)
-TIGHT_WINDOW = timedelta(minutes=2)
+TEMPORAL_WINDOW = timedelta(hours=6) # fereastră temporală generală
+TIGHT_WINDOW = timedelta(minutes=2) # fereastră temporală strictă pentru capabilități
 TIGHT_CONTRACTS: frozenset[str] = frozenset({"code_execution"})
 
+# SID-uri generice excluse din agregarea pe identitate operațională
 GENERIC_SIDS: frozenset[str] = frozenset({
     "S-1-5-18",   # LOCAL SYSTEM
     "S-1-5-19",   # LOCAL SERVICE
@@ -30,10 +31,10 @@ class Correlator:
         self.graph       = nx.DiGraph()
 
     def build_graph(self) -> nx.DiGraph:
-        self.add_findings()
-        self.correlate_provenance()
-        self.correlate_lineage()
-        self.actor_groups = self.partition_actors()
+        self.add_findings() # 1. Populare noduri
+        self.correlate_provenance() # 2. Muchii cauzale prin requires/provides
+        self.correlate_lineage() # 3. Muchii cauzale prin genealogie procese
+        self.actor_groups = self.partition_actors() # 4. Partiționare actori
         return self.graph
 
     # Graph construction 
@@ -111,11 +112,12 @@ class Correlator:
     # Provenance: requires/provides contracts (CAUSAL) 
     @staticmethod
     def _cap_window(cap) -> timedelta:
+        # Capabilitățile itme-sensitive (code_execution) folosesc fereastră strictă
         return TIGHT_WINDOW if cap.name in TIGHT_CONTRACTS else TEMPORAL_WINDOW
 
     @staticmethod
     def _cap_has_none(cap) -> bool:
-        """A contract is poisoned if any bound value is None — never match on None."""
+        # Contractele cu valori None nu participă la potrivire - previn corelări false
         return any(v is None for v in (cap.values or ()))
 
     _FUZZY_BIND_FIELDS: frozenset[str] = frozenset({
@@ -135,7 +137,9 @@ class Correlator:
         return score >= self._FUZZY_THRESHOLD, score
 
     def correlate_provenance(self) -> None:
+        # Index provider: (nume_cap, bind, valori) -> lista findings
         provider_index: dict[tuple, list[DetectionFinding]] = defaultdict(list)
+        # Index strutctural pentru fuzzy matching: (nume_cap, bind) -> lista (finding, capabilitate)
         structural_index: dict[tuple, list[tuple[DetectionFinding, object]]] = defaultdict(list)
 
         for f in self.findings:
@@ -157,7 +161,7 @@ class Correlator:
                 match_kind = "exact"
 
                 providers = provider_index.get((req.name, req.bind, req.values), [])
-
+                # Fallback fuzzy dacă potrivirea exactă eșuează
                 if not providers and self._is_fuzzy_eligible(req.bind):
                     req_value = req.values[0] if req.values else None
                     if req_value:
@@ -178,6 +182,7 @@ class Correlator:
                         continue
                     p_ts = self._get_finding_ts(provider)
                     c_ts = self._get_finding_ts(consumer)
+                    # Validare temporală: elimină asocierile cronologic inconsistente
                     if p_ts != _MISSING_TS and c_ts != _MISSING_TS:
                         if abs(p_ts - c_ts) > window:
                             continue
@@ -216,6 +221,7 @@ class Correlator:
             if not (ev and ev.process and ev.process.parent):
                 continue
             parent = ev.process.parent
+            # GUID are prioritate față de PID pentru corelarea genealogiei proceselor
             if parent.entity_id:
                 parent_fids = guid_to_findings.get(parent.entity_id, [])
             elif parent.pid is not None:
@@ -229,6 +235,7 @@ class Correlator:
                 pair = (parent_fid, f.id)
                 if pair in seen:
                     continue
+                # Validare temporală: critică pentru PID refolosite.
                 if abs(self._get_finding_ts(self.finding_map[parent_fid])
                     - self._get_finding_ts(f)) > TEMPORAL_WINDOW:
                     continue
@@ -327,12 +334,13 @@ class Correlator:
 
     # Actor partitioning: WCC + union-find over co-derivation groups
     def partition_actors(self) -> list[set[str]]:
+        # Pas 1: componente slab conexe: prima aproximare a actorilor
         components = list(nx.weakly_connected_components(self.graph))
         parent = list(range(len(components)))
 
         def find(i: int) -> int:
             while parent[i] != i:
-                parent[i] = parent[parent[i]]
+                parent[i] = parent[parent[i]] # path compression
                 i = parent[i]
             return i
 
@@ -345,12 +353,13 @@ class Correlator:
         for idx, comp in enumerate(components):
             for fid in comp:
                 fid_to_comp[fid] = idx
-
+        # Pas 2: union-find peste grupurile de co-derivare
+        # Veto IP aplicatat în _process_groups, _account_groups, _logon_groups
         for group in self._coderivation_groups():
             idxs = list({fid_to_comp[f] for f in group if f in fid_to_comp})
             for other in idxs[1:]:
                 union(idxs[0], other)
-
+        # Pas 3: doar actorii cu cel putin o muchie cauzală sunt promovați
         merged: dict[int, set[str]] = defaultdict(set)
         for idx, comp in enumerate(components):
             merged[find(idx)] |= comp

@@ -78,13 +78,16 @@ class DetectionFinding(BaseModel):
     id:        str      = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime | None = Field(default_factory=None)
 
-    # Metadata
+    # Metadate regulă
     rule_id:          str
     rule_name:        str
     rule_type:        str # "agregate" | "per_event"
+    # Contracte de capabilități
     requires:         list[Capability]         = []
     provides:         list[Capability]         = []  
+    # Cheia de fuzionare inter-sursă
     fusion_key:       list[tuple] = []              
+    # Mapare ATT&CK / Kill Chain
     severity:         Severity
     confidence:       float             
     technique_id:     Optional[str]     = None
@@ -93,17 +96,17 @@ class DetectionFinding(BaseModel):
     kill_chain_phase: Optional[KillChainPhase]   = None
     tags:             list[str]         = []
 
-    # Source
+    # Sursă și context
     source:      str                    # "windows_events" | "web_logs" | "processes" | "registry"
-    description: str                    # Description of the finding, with context from the rule
+    description: str                    
 
-    triggered_by: list[str] = []        # index in NormalizedEvent list
+    triggered_by: list[str] = []        # referințe la evenimentele care au declanșat această constatare (NormalizedEvent)
     event_count:  int = 1               
 
-    # Additional context
+    # Context adițional
     extra: dict[str, Any] = {}
     entities: dict[str, Any] = {}
-    is_probe: bool = False
+    is_probe: bool = False #distinge amprenta examinatorului de activitatea adversarială
 
 
 
