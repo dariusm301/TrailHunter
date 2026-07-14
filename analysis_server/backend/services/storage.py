@@ -161,7 +161,6 @@ class CollectionStorage:
 
     @staticmethod
     def list_collections(user_id: str, db_session) -> list[str]:
-        """List all available collections in the root directory."""
         record = db_session.query(Collection).filter(Collection.user_id == user_id).all()
         return [r.id for r in record]
     

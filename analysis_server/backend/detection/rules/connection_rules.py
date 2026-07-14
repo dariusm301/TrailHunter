@@ -218,7 +218,7 @@ class SuspiciousInboundSSHRule(PerEventRule):
             technique_id="T1021.004",
             technique_name="Remote Services: SSH",
             tactic=MitreTactic.LATERAL_MOVEMENT,
-            kill_chain_phase=KillChainPhase.ACTIONS_ON_OBJECTIVES,
+            kill_chain_phase=KillChainPhase.COMMAND_AND_CONTROL,
             tags=["ssh", "inbound", "network", "live"],
             source="network",
             description=f"SSH connection from {dst_ip}",

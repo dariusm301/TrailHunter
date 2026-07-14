@@ -300,6 +300,7 @@ async def _forward_collection(websocket: WebSocket, collection: dict) -> dict:
                     "text": f"Chunk {i + 1}/{total_chunks} sent ({len(chunk) / 1024:.0f} KB)",
                 }))
             except Exception as e:
+                logger.error(f"Error: {e}")
         try:
             resp = await client.post(
                 f"{analysis_server_url}/api/probe/ingest/complete/{upload_id}",

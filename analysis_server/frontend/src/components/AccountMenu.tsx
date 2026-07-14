@@ -30,7 +30,7 @@ export default function AccountMenu() {
           {user?.is_admin && (
             <>
               <Link to="/settings/users" style={S.menuItem} onClick={() => setOpen(false)}>
-                Users
+                Utilizatori
               </Link>
               <div style={S.divider} />
             </>

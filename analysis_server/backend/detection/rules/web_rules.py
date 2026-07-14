@@ -397,7 +397,8 @@ _SUSPICIOUS_CMD_TOKENS = re.compile(
 
 
 def _suspicious_cmd_from_body(event: NormalizedEvent) -> Optional[str]:
-    """Scanează toate valorile din body-ul POST după pattern-uri de command injection / LotL."""
+    """Scanează toate valorile din body-ul POST, indiferent de numele
+    parametrului, după pattern-uri de command injection / LotL."""
     raw = _body(event)
     if not raw:
         return None
@@ -441,11 +442,11 @@ class WebshellPostBodyExecutionRule(PerEventRule):
             fusion_key=[("webshell_command", cmd)],
             severity=Severity.CRITICAL,
             confidence=0.85,
-            technique_id="T1059",
-            technique_name="Command and Scripting Interpreter",
+            technique_id="T1505.003",
+            technique_name="Web Shell",
             tactic=MitreTactic.EXECUTION,
             kill_chain_phase=KillChainPhase.EXPLOITATION,
-            tags=["rce", "execution", "web", "post_body"],
+            tags=["webshell", "rce", "execution", "web", "post_body"],
             source="web_logs",
             description=f"Suspicious command detected in POST body from {_ip(event)} to {url}: {cmd}",
             timestamp=_ts(event) or None,

@@ -109,7 +109,7 @@
 
     $jsonPayload = $result | ConvertTo-Json -Depth 10
     $jsonBytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonPayload)
-    $hashString  = Get-JsonHash $jsonPayload
+    $hashString  = Get-JsonHash $jsonBytes
     $totalChunks = [math]::Ceiling($jsonBytes.Length / $CHUNK_SIZE)
 
     Write-Host "[*] Total JSON size: $([math]::Round($jsonBytes.Length / 1MB, 2)) MB ($totalChunks chunks)"
@@ -179,5 +179,4 @@
 
     if ($Host.Name -eq "ConsoleHost") {
         Read-Host -Prompt "Press Enter to close"
-    }
     }

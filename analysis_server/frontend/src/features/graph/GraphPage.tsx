@@ -38,6 +38,12 @@ function maxSeverity(nodes: GraphNode[]): string {
   }
   return label
 }
+function phaseSpan(nodes: GraphNode[]): string {
+  const sorted = [...nodes].sort(byTime)
+  const first = sorted[0]?.fields.kill_chain || '—'
+  const last = sorted[sorted.length - 1]?.fields.kill_chain || '—'
+  return first === last ? first : `${first} → ${last}`
+}
 function collectStrings(obj: unknown): string[] {
   if (obj === null || obj === undefined) return []
   if (typeof obj === 'string') return [obj]
@@ -354,6 +360,7 @@ export default function GraphPage() {
                   <span style={S.actorName}>Actor {ip}</span>
                   <span style={S.actorCount}>{nodes.length}</span>
                 </div>
+                <div style={S.actorSub}>{phaseSpan(nodes)}</div>
                 <div style={S.actorSub}>severity {maxSeverity(nodes)}</div>
               </button>
             )

@@ -23,6 +23,7 @@ async function parseErrorDetail(res: Response): Promise<string> {
     const err = (await res.json()) as { detail?: string }
     if (err?.detail) detail = err.detail
   } catch {
+    // ignore - corpul nu era JSON
   }
   return detail
 }
@@ -33,7 +34,7 @@ export async function login({ username, password }: SignInParams): Promise<Token
   const res = await fetch(`${BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    credentials: 'include', 
+    credentials: 'include', // necesar ca Set-Cookie (refresh_token) sa fie acceptat
     body,
   })
 
@@ -49,7 +50,7 @@ export async function login({ username, password }: SignInParams): Promise<Token
 export async function refreshAccessToken(): Promise<TokenResponse | null> {
   const res = await fetch(`${BASE}/auth/refresh`, {
     method: 'POST',
-    credentials: 'include', 
+    credentials: 'include', // trimite cookie-ul HttpOnly de refresh
   })
 
   if (!res.ok) {
@@ -67,6 +68,7 @@ export async function logout(): Promise<void> {
     method: 'POST',
     credentials: 'include',
   }).catch(() => {
+    // golim starea locala chiar daca request-ul de retea pica
   })
   setAccessToken(null)
 }
@@ -83,6 +85,7 @@ export async function fetchMe(): Promise<AuthUser> {
 }
 
 export async function register({ username, password }: SignInParams): Promise<AuthUser> {
+  // Fara token (bootstrap, primul cont) sau cu token de admin (cont nou din settings) — ambele cazuri.
   const token = getAccessToken()
   const res = await fetch(`${BASE}/auth/register`, {
     method: 'POST',
